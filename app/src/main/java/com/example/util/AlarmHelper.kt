@@ -4,6 +4,8 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.provider.AlarmClock
+import android.provider.CalendarContract
+import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -27,12 +29,39 @@ data class AlarmActionItem(
 
 object AlarmHelper {
 
-    fun computeTargetAlarmTime(hoursFromNow: Double, nowCalendar: Calendar = Calendar.getInstance()): Pair<Int, Int> {
+    fun computeTargetCalendar(hoursFromNow: Double, nowCalendar: Calendar = Calendar.getInstance()): Calendar {
         val minutesToAdd = (hoursFromNow.coerceAtLeast(0.02) * 60.0).roundToInt().coerceAtLeast(1)
-        val targetCal = (nowCalendar.clone() as Calendar).apply {
+        return (nowCalendar.clone() as Calendar).apply {
             add(Calendar.MINUTE, minutesToAdd)
         }
-        return targetCal.get(Calendar.HOUR_OF_DAY) to targetCal.get(Calendar.MINUTE)
+    }
+
+    fun computeTargetAlarmTime(hoursFromNow: Double, nowCalendar: Calendar = Calendar.getInstance()): Pair<Int, Int> {
+        val cal = computeTargetCalendar(hoursFromNow, nowCalendar)
+        return cal.get(Calendar.HOUR_OF_DAY) to cal.get(Calendar.MINUTE)
+    }
+
+    fun formatTargetDateTime(targetCal: Calendar): String {
+        val sdf = SimpleDateFormat("EEE, MMM d • h:mm a", Locale.US)
+        return sdf.format(targetCal.time)
+    }
+
+    fun formatTargetDateShort(targetCal: Calendar): String {
+        val sdf = SimpleDateFormat("EEE, MMM d", Locale.US)
+        return sdf.format(targetCal.time)
+    }
+
+    fun formatRelativeDuration(hoursFromNow: Double): String {
+        val totalMinutes = (hoursFromNow * 60.0).roundToInt()
+        val days = totalMinutes / (24 * 60)
+        val remainingHours = (totalMinutes % (24 * 60)) / 60
+        val remainingMins = totalMinutes % 60
+        return when {
+            days > 0 && remainingHours > 0 -> "${days}d ${remainingHours}h"
+            days > 0 -> "${days}d"
+            remainingHours > 0 -> "${remainingHours}h ${remainingMins}m"
+            else -> "${remainingMins}m"
+        }
     }
 
     fun formatTime24(hour: Int, minute: Int): String {
@@ -47,7 +76,7 @@ object AlarmHelper {
 
     /**
      * Launches the user's Android Clock app using [AlarmClock.ACTION_SET_ALARM]
-     * pre-populated with the exact hour, minute, and Flyff Mac NPC action label.
+     * pre-populated with the exact hour, minute, day-of-week, and Flyff Mac NPC action label.
      */
     fun scheduleClockAlarm(
         context: Context,
@@ -55,14 +84,26 @@ object AlarmHelper {
         label: String,
         skipUi: Boolean = false
     ): AlarmScheduleResult {
-        val (hour, minute) = computeTargetAlarmTime(hoursFromNow)
-        val formatted = formatTime24(hour, minute)
+        val targetCal = computeTargetCalendar(hoursFromNow)
+        val hour = targetCal.get(Calendar.HOUR_OF_DAY)
+        val minute = targetCal.get(Calendar.MINUTE)
+        val formattedTime = formatTargetDateTime(targetCal)
+
+        val datePrefix = SimpleDateFormat("EEE MMM d", Locale.US).format(targetCal.time)
+        val enrichedLabel = "[$datePrefix] $label"
 
         val alarmIntent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
             putExtra(AlarmClock.EXTRA_HOUR, hour)
             putExtra(AlarmClock.EXTRA_MINUTES, minute)
-            putExtra(AlarmClock.EXTRA_MESSAGE, label)
+            putExtra(AlarmClock.EXTRA_MESSAGE, enrichedLabel)
             putExtra(AlarmClock.EXTRA_SKIP_UI, skipUi)
+
+            // Pass the target day of week for alarms within 7 days so Android Clock doesn't default to today!
+            if (hoursFromNow <= 168.0) {
+                val dayOfWeek = targetCal.get(Calendar.DAY_OF_WEEK)
+                putExtra(AlarmClock.EXTRA_DAYS, arrayListOf(dayOfWeek))
+            }
+
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
 
@@ -79,10 +120,41 @@ object AlarmHelper {
             launchedClockApp = launched,
             targetHour24 = hour,
             targetMinute = minute,
-            formattedTime = formatted,
-            label = label,
+            formattedTime = formattedTime,
+            label = enrichedLabel,
             hoursFromNow = hoursFromNow
         )
+    }
+
+    /**
+     * Pre-populates a Google Calendar or Samsung Calendar Event Reminder with the exact
+     * calendar date and time (e.g., Nov 10, Nov 11, Nov 19) with a notification alarm.
+     */
+    fun scheduleCalendarReminder(
+        context: Context,
+        hoursFromNow: Double,
+        label: String
+    ): Boolean {
+        val targetCal = computeTargetCalendar(hoursFromNow)
+        val startMs = targetCal.timeInMillis
+        val endMs = startMs + (30 * 60 * 1000) // 30 min duration
+
+        val intent = Intent(Intent.ACTION_INSERT).apply {
+            data = CalendarContract.Events.CONTENT_URI
+            putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, startMs)
+            putExtra(CalendarContract.EXTRA_EVENT_END_TIME, endMs)
+            putExtra(CalendarContract.Events.TITLE, label)
+            putExtra(CalendarContract.Events.DESCRIPTION, "Flyff Pet Empire Alert: Action required for your house pets.")
+            putExtra(CalendarContract.Events.HAS_ALARM, 1)
+            putExtra(CalendarContract.Events.AVAILABILITY, CalendarContract.Events.AVAILABILITY_BUSY)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        return try {
+            context.startActivity(intent)
+            true
+        } catch (_: Exception) {
+            false
+        }
     }
 
     /**

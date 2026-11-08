@@ -20,6 +20,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessAlarm
 import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.HomeWork
 import androidx.compose.material.icons.filled.RocketLaunch
 import androidx.compose.material.icons.filled.Timer
@@ -388,12 +389,14 @@ fun PetEmpireApp(
                 showClockDialog = false
                 triggerClockAlarm(hours, label)
             },
-            onScheduleCountdownTimer = { hours, label ->
+            onScheduleCalendarReminder = { hours, label ->
                 showClockDialog = false
-                val ok = AlarmHelper.scheduleCountdownTimer(context, hours, label)
+                val ok = AlarmHelper.scheduleCalendarReminder(context, hours, label)
+                val targetCal = AlarmHelper.computeTargetCalendar(hours)
+                val dt = AlarmHelper.formatTargetDateTime(targetCal)
                 viewModel.notifyAlarmScheduled(
-                    if (ok) "Clock countdown timer started (${CalculationEngine.formatHours(hours)}) • $label"
-                    else "Countdown timer set for ${CalculationEngine.formatHours(hours)} • $label"
+                    if (ok) "Calendar reminder opened for $dt • $label"
+                    else "Calendar reminder scheduled for $dt"
                 )
             }
         )
@@ -422,7 +425,7 @@ private fun ClockAlarmCenterDialog(
     uiState: PetEmpireUiState,
     onDismiss: () -> Unit,
     onScheduleClockAlarm: (Double, String) -> Unit,
-    onScheduleCountdownTimer: (Double, String) -> Unit
+    onScheduleCalendarReminder: (Double, String) -> Unit
 ) {
     val earliestRemaining: Double = remember(uiState.activeHouses) {
         uiState.activeHouses
@@ -436,8 +439,9 @@ private fun ClockAlarmCenterDialog(
     var customLabelText by remember { mutableStateOf("Flyff Pet Empire: Check Mac NPC Timers") }
 
     val parsedHours = customHoursText.toDoubleOrNull()?.coerceAtLeast(0.05) ?: earliestRemaining
-    val (targetHour, targetMin) = AlarmHelper.computeTargetAlarmTime(parsedHours)
-    val previewClockTime = AlarmHelper.formatTime24(targetHour, targetMin)
+    val targetCal = AlarmHelper.computeTargetCalendar(parsedHours)
+    val previewDateText = AlarmHelper.formatTargetDateTime(targetCal)
+    val relativeDuration = AlarmHelper.formatRelativeDuration(parsedHours)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -446,15 +450,16 @@ private fun ClockAlarmCenterDialog(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.AccessAlarm, contentDescription = "Clock Alarm", tint = PenyaGold)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Android Clock App Alarm Scheduler", color = Color.White)
+                Text("Flyff Alarm & Calendar Scheduler", color = Color.White)
             }
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    text = "Set a system Clock alarm so you never forget to manually pause a finished pet and burn 360-hour Mac NPC fCoins:",
+                    text = "Target Date: $previewDateText (in $relativeDuration)",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontWeight = FontWeight.Bold,
+                    color = PenyaGold
                 )
 
                 OutlinedTextField(
@@ -462,7 +467,7 @@ private fun ClockAlarmCenterDialog(
                     onValueChange = { inputStr: String ->
                         customHoursText = inputStr.filter { ch: Char -> ch.isDigit() || ch == '.' }
                     },
-                    label = { Text("Hours Until Action (Target: $previewClockTime)") },
+                    label = { Text("Hours Remaining (+${CalculationEngine.formatHours(parsedHours)})") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier
@@ -544,18 +549,18 @@ private fun ClockAlarmCenterDialog(
                     ) {
                         Icon(Icons.Default.AccessAlarm, contentDescription = "Alarm", modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Set Clock Alarm", fontWeight = FontWeight.Bold)
+                        Text("Clock Alarm", fontWeight = FontWeight.Bold)
                     }
 
                     OutlinedButton(
-                        onClick = { onScheduleCountdownTimer(parsedHours, customLabelText) },
+                        onClick = { onScheduleCalendarReminder(parsedHours, customLabelText) },
                         modifier = Modifier
                             .weight(1f)
-                            .testTag("confirm_clock_timer_button")
+                            .testTag("confirm_calendar_reminder_button")
                     ) {
-                        Icon(Icons.Default.Timer, contentDescription = "Timer", modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.CalendarMonth, contentDescription = "Calendar", modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Set Timer", color = FCoinCyan)
+                        Text("Calendar Event", color = FCoinCyan)
                     }
                 }
             }
