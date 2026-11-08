@@ -18,8 +18,11 @@ data class AlarmScheduleResult(
 )
 
 data class AlarmActionItem(
+    val id: String = java.util.UUID.randomUUID().toString(),
     val hoursFromNow: Double,
-    val label: String
+    val label: String,
+    val categoryKey: String = "general",
+    val clusterCount: Int = 1
 )
 
 object AlarmHelper {
@@ -83,47 +86,70 @@ object AlarmHelper {
     }
 
     /**
-     * Schedules a sequence of distinct alarms for multiple houses / actions
-     * using EXTRA_SKIP_UI=true for background registration, with the final or only alarm
-     * presenting the Clock UI so the user can verify all registered alarms.
+     * Consolidates timers by class and 1-hour window:
+     * "Any timer that is for the same class pet and within 1 hour of other same class pets
+     * should be reduced to 1 timer (taking only the earliest timer for that group)".
      */
-    fun scheduleBatchAlarms(
-        context: Context,
-        alarms: List<AlarmActionItem>
-    ): Pair<Int, String> {
-        if (alarms.isEmpty()) return 0 to "No active house timers require alarms."
+    fun consolidateAlarmItems(items: List<AlarmActionItem>): List<AlarmActionItem> {
+        if (items.isEmpty()) return emptyList()
 
-        // Group alarms that fall within the same minute to avoid creating duplicate alarms at the exact same minute
-        val distinctMinuteAlarms = alarms
-            .sortedBy { it.hoursFromNow }
-            .distinctBy {
-                val (h, m) = computeTargetAlarmTime(it.hoursFromNow)
-                "$h:$m"
+        // Group items by category (e.g. "tier_C", "tier_B", "s_tier_bake", "mac_A")
+        val byCategory = items.groupBy { it.categoryKey }
+        val consolidated = mutableListOf<AlarmActionItem>()
+
+        for ((_, groupItems) in byCategory) {
+            val sorted = groupItems.sortedBy { it.hoursFromNow }
+            var currentClusterEarliest: AlarmActionItem? = null
+            var clusterCount = 0
+
+            for (item in sorted) {
+                if (currentClusterEarliest == null) {
+                    currentClusterEarliest = item
+                    clusterCount = 1
+                } else {
+                    // Check if within 1.0 hour of the cluster's earliest timer
+                    if (item.hoursFromNow - currentClusterEarliest.hoursFromNow <= 1.0) {
+                        clusterCount++
+                    } else {
+                        // Emit completed cluster with combined label if multiple houses
+                        val finalLabel = if (clusterCount > 1) {
+                            "${currentClusterEarliest.label} ($clusterCount houses within 1h)"
+                        } else {
+                            currentClusterEarliest.label
+                        }
+                        consolidated.add(
+                            currentClusterEarliest.copy(
+                                label = finalLabel,
+                                clusterCount = clusterCount
+                            )
+                        )
+
+                        currentClusterEarliest = item
+                        clusterCount = 1
+                    }
+                }
             }
 
-        var count = 0
-        distinctMinuteAlarms.forEachIndexed { index, item ->
-            val isLast = index == distinctMinuteAlarms.lastIndex
-            // skipUi = true for background alarms, false for the last one so the Clock app opens to view them
-            val res = scheduleClockAlarm(
-                context = context,
-                hoursFromNow = item.hoursFromNow,
-                label = item.label,
-                skipUi = !isLast
-            )
-            if (res.launchedClockApp) count++
+            if (currentClusterEarliest != null) {
+                val finalLabel = if (clusterCount > 1) {
+                    "${currentClusterEarliest.label} ($clusterCount houses within 1h)"
+                } else {
+                    currentClusterEarliest.label
+                }
+                consolidated.add(
+                    currentClusterEarliest.copy(
+                        label = finalLabel,
+                        clusterCount = clusterCount
+                    )
+                )
+            }
         }
 
-        val desc = if (distinctMinuteAlarms.size == 1) {
-            "Set 1 alarm for ${distinctMinuteAlarms.first().label}"
-        } else {
-            "Set ${distinctMinuteAlarms.size} distinct alarms across active houses in Clock app"
-        }
-        return count to desc
+        return consolidated.sortedBy { it.hoursFromNow }
     }
 
     /**
-     * Launches the user's Android Clock app countdown timer using [AlarmClock.ACTION_SET_TIMER].
+     * Launches the Clock app countdown timer using [AlarmClock.ACTION_SET_TIMER].
      */
     fun scheduleCountdownTimer(
         context: Context,

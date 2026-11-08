@@ -85,7 +85,10 @@ import com.example.ui.theme.ObsidianBackground
 import com.example.ui.theme.ObsidianCard
 import com.example.ui.theme.ObsidianSurface
 import com.example.ui.theme.PenyaGold
+import com.example.ui.components.AlarmBatchQueueDialog
+import com.example.util.AlarmActionItem
 import com.example.util.AlarmHelper
+import java.util.Locale
 
 enum class EmpireTab(
     val route: String,
@@ -152,6 +155,9 @@ fun PetEmpireApp(
     val snackbarHostState = remember { SnackbarHostState() }
     var currentTab by rememberSaveable { mutableStateOf(EmpireTab.DASHBOARD) }
     var showClockDialog by rememberSaveable { mutableStateOf(false) }
+    var showAlarmQueueDialog by rememberSaveable { mutableStateOf(false) }
+    var queueItems by remember { mutableStateOf<List<AlarmActionItem>>(emptyList()) }
+    var queueOnlyChanged by rememberSaveable { mutableStateOf(false) }
 
     BackHandler(enabled = currentTab != EmpireTab.DASHBOARD) {
         currentTab = EmpireTab.DASHBOARD
@@ -325,13 +331,15 @@ fun PetEmpireApp(
                     onScheduleClockAlarm = { hours, label -> triggerClockAlarm(hours, label) },
                     onScheduleAllEmpireAlarms = { onlyChanged ->
                         val actions = viewModel.getAllEmpireAlarmActionItems(onlyChanged = onlyChanged)
-                        val (count, desc) = AlarmHelper.scheduleBatchAlarms(context, actions)
-                        if (onlyChanged && count > 0) {
-                            viewModel.clearAllChangedTimers()
+                        if (actions.isEmpty()) {
+                            viewModel.notifyAlarmScheduled(
+                                if (onlyChanged) "No changed timers pending alarms." else "No active timers currently pending alarms."
+                            )
+                        } else {
+                            queueItems = actions
+                            queueOnlyChanged = onlyChanged
+                            showAlarmQueueDialog = true
                         }
-                        viewModel.notifyAlarmScheduled(
-                            if (count > 0) desc else if (onlyChanged) "No changed timers pending alarms." else "No active timers currently pending alarms."
-                        )
                     },
                     modifier = Modifier.padding(innerPadding)
                 )
@@ -390,6 +398,22 @@ fun PetEmpireApp(
             }
         )
     }
+
+    if (showAlarmQueueDialog && queueItems.isNotEmpty()) {
+        AlarmBatchQueueDialog(
+            items = queueItems,
+            isOnlyChanged = queueOnlyChanged,
+            onDismiss = { showAlarmQueueDialog = false },
+            onSingleAlarmScheduled = { item ->
+                viewModel.notifyAlarmScheduled("Alarm pre-filled: ${item.label}")
+            },
+            onAllAlarmsFinished = {
+                if (queueOnlyChanged) {
+                    viewModel.clearAllChangedTimers()
+                }
+            }
+        )
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -400,10 +424,18 @@ private fun ClockAlarmCenterDialog(
     onScheduleClockAlarm: (Double, String) -> Unit,
     onScheduleCountdownTimer: (Double, String) -> Unit
 ) {
-    var customHoursText by remember { mutableStateOf("4.5") }
-    var customLabelText by remember { mutableStateOf("Flyff Pet Empire • Pause Finished Mac NPC") }
+    val earliestRemaining: Double = remember(uiState.activeHouses) {
+        uiState.activeHouses
+            .mapNotNull { it.nextActionHoursRemaining }
+            .filter { it > 0.05 }
+            .minOrNull() ?: 10.0
+    }
+    var customHoursText by remember(earliestRemaining) {
+        mutableStateOf(String.format(Locale.US, "%.1f", earliestRemaining))
+    }
+    var customLabelText by remember { mutableStateOf("Flyff Pet Empire: Check Mac NPC Timers") }
 
-    val parsedHours = customHoursText.toDoubleOrNull()?.coerceAtLeast(0.05) ?: 1.0
+    val parsedHours = customHoursText.toDoubleOrNull()?.coerceAtLeast(0.05) ?: earliestRemaining
     val (targetHour, targetMin) = AlarmHelper.computeTargetAlarmTime(parsedHours)
     val previewClockTime = AlarmHelper.formatTime24(targetHour, targetMin)
 
@@ -427,7 +459,9 @@ private fun ClockAlarmCenterDialog(
 
                 OutlinedTextField(
                     value = customHoursText,
-                    onValueChange = { customHoursText = it.filter { ch -> ch.isDigit() || ch == '.' } },
+                    onValueChange = { inputStr: String ->
+                        customHoursText = inputStr.filter { ch: Char -> ch.isDigit() || ch == '.' }
+                    },
                     label = { Text("Hours Until Action (Target: $previewClockTime)") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -438,7 +472,7 @@ private fun ClockAlarmCenterDialog(
 
                 OutlinedTextField(
                     value = customLabelText,
-                    onValueChange = { customLabelText = it },
+                    onValueChange = { inputStr: String -> customLabelText = inputStr },
                     label = { Text("Alarm Label in Clock App") },
                     singleLine = true,
                     modifier = Modifier
@@ -447,7 +481,7 @@ private fun ClockAlarmCenterDialog(
                 )
 
                 Text(
-                    text = "Quick Flyff Pet Tier Presets:",
+                    text = "Quick Flyff Pet Stage Duration Presets:",
                     style = MaterialTheme.typography.labelMedium,
                     color = PenyaGold
                 )
@@ -457,22 +491,40 @@ private fun ClockAlarmCenterDialog(
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     OutlinedButton(onClick = {
-                        customHoursText = "15.0"
-                        customLabelText = "Flyff • Pause Grade F Mac NPC (15h Complete)"
+                        customHoursText = "10.0"
+                        customLabelText = "Flyff Pet Empire: Grade F (10h Complete)"
                     }) {
-                        Text("Grade F (15h)")
+                        Text("F (10h)")
                     }
                     OutlinedButton(onClick = {
-                        customHoursText = "25.0"
-                        customLabelText = "Flyff • Pause Grade E Mac NPC (25h Complete)"
+                        customHoursText = "20.0"
+                        customLabelText = "Flyff Pet Empire: Grade E (20h Complete)"
                     }) {
-                        Text("Grade E (25h)")
+                        Text("E (20h)")
                     }
                     OutlinedButton(onClick = {
-                        customHoursText = "12.0"
-                        customLabelText = "Flyff • Check ${uiState.summary.activeHouseCount}-House S-Tier Bake"
+                        customHoursText = "50.0"
+                        customLabelText = "Flyff Pet Empire: Grade D (50h Complete)"
                     }) {
-                        Text("12h Check")
+                        Text("D (50h)")
+                    }
+                    OutlinedButton(onClick = {
+                        customHoursText = "50.0"
+                        customLabelText = "Flyff Pet Empire: Grade C (50h Complete)"
+                    }) {
+                        Text("C (50h)")
+                    }
+                    OutlinedButton(onClick = {
+                        customHoursText = "75.0"
+                        customLabelText = "Flyff Pet Empire: Grade B (75h Complete)"
+                    }) {
+                        Text("B (75h)")
+                    }
+                    OutlinedButton(onClick = {
+                        customHoursText = "250.0"
+                        customLabelText = "Flyff Pet Empire: S-Tier Bake (250h Complete)"
+                    }) {
+                        Text("S-Bake (250h)")
                     }
                 }
 

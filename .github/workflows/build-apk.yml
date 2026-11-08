@@ -22,17 +22,18 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+
       - name: Accept Android SDK Licenses
         run: |
-          if [ -d "$ANDROID_HOME/cmdline-tools/latest/bin" ]; then
-            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
-          elif [ -d "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" ]; then
-            yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
-          fi
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
 
       - name: Prepare .env and Debug Keystore for CI
         run: |
-          # 1. Ensure .env exists for Secrets Gradle Plugin (since .env is gitignored)
+          # 1. Ensure .env exists for Secrets Gradle Plugin
           if [ ! -f .env ]; then
             if [ -f .env.example ]; then
               cp .env.example .env
@@ -41,7 +42,7 @@ jobs:
             fi
           fi
 
-          # 2. Restore debug.keystore from base64 or generate standard debug keystore for CI signing
+          # 2. Restore debug.keystore from base64 or generate fallback debug keystore for CI signing
           if [ ! -f debug.keystore ]; then
             if [ -f debug.keystore.base64 ]; then
               base64 -d debug.keystore.base64 > debug.keystore
@@ -60,13 +61,8 @@ jobs:
             fi
           fi
 
-      - name: Install Gradle 9.3.1 & Build Debug APK
+      - name: Build Debug APK
         run: |
-          GRADLE_VERSION="9.3.1"
-          curl -sL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" -o /tmp/gradle.zip
-          unzip -q /tmp/gradle.zip -d /tmp/gradle
-          export PATH="/tmp/gradle/gradle-${GRADLE_VERSION}/bin:$PATH"
-          gradle --version
           gradle :app:assembleDebug --no-daemon --stacktrace
 
       - name: Upload Debug APK Artifact

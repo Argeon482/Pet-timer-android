@@ -11,6 +11,7 @@ import com.example.data.HouseComputedStatus
 import com.example.data.PetEmpireRepository
 import com.example.data.PetTier
 import com.example.util.AlarmActionItem
+import com.example.util.AlarmHelper
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -518,44 +519,50 @@ class PetEmpireViewModel(
     /**
      * Collects pending actions across active houses.
      * If [onlyChanged] is true, only returns actions for timers that were recently modified/set.
+     * Consolidates same-class pet timers within 1 hour of each other to only the earliest timer.
      */
     fun getAllEmpireAlarmActionItems(onlyChanged: Boolean = false): List<AlarmActionItem> {
         val state = uiState.value
         val changedKeys = changedTimerKeysFlow.value
-        val items = mutableListOf<AlarmActionItem>()
+        val rawItems = mutableListOf<AlarmActionItem>()
 
         state.activeHouses.forEach { house ->
             val num = house.entity.houseNumber
 
-            // Slot 1
+            // Slot 1: S-Tier Bake (Mac A)
             val s1Key = "h${num}_s1"
             if ((!onlyChanged || changedKeys.contains(s1Key)) && house.slot1.isRunning && house.slot1.remainingHours > 0.02) {
-                items.add(
+                rawItems.add(
                     AlarmActionItem(
                         hoursFromNow = house.slot1.remainingHours,
-                        label = "House #$num: Slot 1 S-Tier Bake Complete"
+                        label = "House #$num: S-Tier Bake Ready",
+                        categoryKey = "tier_S_bake"
                     )
                 )
             }
 
-            // Slot 2
+            // Slot 2: Pipeline
             val s2Key = "h${num}_s2"
             if ((!onlyChanged || changedKeys.contains(s2Key)) && house.slot2.isRunning && house.slot2.remainingHours > 0.02) {
-                items.add(
+                val nextTier = house.slot2.tier.nextTier()
+                rawItems.add(
                     AlarmActionItem(
                         hoursFromNow = house.slot2.remainingHours,
-                        label = "House #$num: Slot 2 Tier ${house.slot2.tier.code} Complete"
+                        label = "House #$num: Grade ${house.slot2.tier.code} → ${nextTier.code} Ready",
+                        categoryKey = "tier_${house.slot2.tier.code}_to_${nextTier.code}"
                     )
                 )
             }
 
-            // Slot 3
+            // Slot 3: Pipeline
             val s3Key = "h${num}_s3"
             if ((!onlyChanged || changedKeys.contains(s3Key)) && house.slot3.isRunning && house.slot3.remainingHours > 0.02) {
-                items.add(
+                val nextTier = house.slot3.tier.nextTier()
+                rawItems.add(
                     AlarmActionItem(
                         hoursFromNow = house.slot3.remainingHours,
-                        label = "House #$num: Slot 3 Tier ${house.slot3.tier.code} Complete"
+                        label = "House #$num: Grade ${house.slot3.tier.code} → ${nextTier.code} Ready",
+                        categoryKey = "tier_${house.slot3.tier.code}_to_${nextTier.code}"
                     )
                 )
             }
@@ -564,17 +571,19 @@ class PetEmpireViewModel(
             house.macTimers.filter { it.isExpiringSoon && it.hoursRemaining > 0.05 }.forEach { mac ->
                 val macKey = "h${num}_mac_${mac.grade.code}"
                 if (!onlyChanged || changedKeys.contains(macKey)) {
-                    items.add(
+                    rawItems.add(
                         AlarmActionItem(
                             hoursFromNow = mac.hoursRemaining,
-                            label = "House #$num: Mac ${mac.grade.code} NPC Expired (360h)"
+                            label = "House #$num: Mac ${mac.grade.code} NPC Expired (360h)",
+                            categoryKey = "mac_${mac.grade.code}"
                         )
                     )
                 }
             }
         }
 
-        return items
+        // Consolidate same class pet timers within 1 hour to earliest timer
+        return AlarmHelper.consolidateAlarmItems(rawItems)
     }
 
     fun pauseAllFinishedPets() {

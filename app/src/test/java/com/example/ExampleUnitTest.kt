@@ -56,4 +56,61 @@ class ExampleUnitTest {
         // Total F-to-A ramp-up hours = 10 + 20 + 50 + 50 + 75 = 205h
         assertEquals(205.0, com.example.data.PetTier.TOTAL_F_TO_A_RAMP_HOURS, 0.001)
     }
+
+    @Test
+    fun alarmConsolidation_reducesSameClassTimersWithinOneHourToEarliest() {
+        val raw = listOf(
+            com.example.util.AlarmActionItem(
+                hoursFromNow = 12.0,
+                label = "House #1: Grade C → B Ready",
+                categoryKey = "tier_C_to_B"
+            ),
+            com.example.util.AlarmActionItem(
+                hoursFromNow = 12.2,
+                label = "House #2: Grade C → B Ready",
+                categoryKey = "tier_C_to_B"
+            ),
+            com.example.util.AlarmActionItem(
+                hoursFromNow = 12.5,
+                label = "House #3: Grade C → B Ready",
+                categoryKey = "tier_C_to_B"
+            ),
+            com.example.util.AlarmActionItem(
+                hoursFromNow = 12.9,
+                label = "House #4: Grade C → B Ready",
+                categoryKey = "tier_C_to_B"
+            ),
+            // Distinct category at 12.1h: should NOT merge with C->B
+            com.example.util.AlarmActionItem(
+                hoursFromNow = 12.1,
+                label = "House #5: Grade B → A Ready",
+                categoryKey = "tier_B_to_A"
+            ),
+            // Grade C at 15.0h: >1 hour after 12.0h -> separate cluster
+            com.example.util.AlarmActionItem(
+                hoursFromNow = 15.0,
+                label = "House #6: Grade C → B Ready",
+                categoryKey = "tier_C_to_B"
+            )
+        )
+
+        val consolidated = com.example.util.AlarmHelper.consolidateAlarmItems(raw)
+        // Expected:
+        // 1. Earliest C->B cluster: hours = 12.0, clusterCount = 4
+        // 2. B->A item: hours = 12.1, clusterCount = 1
+        // 3. Later C->B item: hours = 15.0, clusterCount = 1
+        assertEquals(3, consolidated.size)
+
+        val cluster1 = consolidated.first { it.categoryKey == "tier_C_to_B" && it.hoursFromNow < 13.0 }
+        assertEquals(12.0, cluster1.hoursFromNow, 0.001)
+        assertEquals(4, cluster1.clusterCount)
+
+        val clusterB = consolidated.first { it.categoryKey == "tier_B_to_A" }
+        assertEquals(12.1, clusterB.hoursFromNow, 0.001)
+        assertEquals(1, clusterB.clusterCount)
+
+        val clusterLaterC = consolidated.first { it.categoryKey == "tier_C_to_B" && it.hoursFromNow > 14.0 }
+        assertEquals(15.0, clusterLaterC.hoursFromNow, 0.001)
+        assertEquals(1, clusterLaterC.clusterCount)
+    }
 }
