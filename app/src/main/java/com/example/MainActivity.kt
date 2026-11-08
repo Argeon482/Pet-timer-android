@@ -303,6 +303,12 @@ fun PetEmpireApp(
                     onAdjustSlotHours = { houseNum, slotIdx, newHours, keepRunning ->
                         viewModel.adjustSlotHours(houseNum, slotIdx, newHours, keepRunning)
                     },
+                    onSetSlotRemainingHours = { houseNum, slotIdx, remHours ->
+                        viewModel.setSlotRemainingHours(houseNum, slotIdx, remHours)
+                    },
+                    onSetMacRemainingHours = { houseNum, grade, remHours ->
+                        viewModel.setMacRemainingHours(houseNum, grade, remHours)
+                    },
                     onSetPipelineSlotTier = { houseNum, slotIdx, tier ->
                         viewModel.setPipelineSlotTier(houseNum, slotIdx, tier)
                     },
@@ -315,8 +321,16 @@ fun PetEmpireApp(
                     onOpenHouseDetail = { viewModel.selectHouseForDetail(it) },
                     onPauseAllFinished = { viewModel.pauseAllFinishedPets() },
                     onSyncAllHourZero = { viewModel.synchronizeAllHousesToHarvestDayHourZero() },
+                    onApplyBulkPromotionSetup = { viewModel.applyEmpireBulkPromotionSetup() },
                     onSetAllRunning = { viewModel.setAllHousesRunningState(it) },
                     onScheduleClockAlarm = { hours, label -> triggerClockAlarm(hours, label) },
+                    onScheduleAllEmpireAlarms = {
+                        val actions = viewModel.getAllEmpireAlarmActionItems()
+                        val (count, desc) = AlarmHelper.scheduleBatchAlarms(context, actions)
+                        viewModel.notifyAlarmScheduled(
+                            if (count > 0) desc else "No active timers currently pending alarms."
+                        )
+                    },
                     modifier = Modifier.padding(innerPadding)
                 )
             }

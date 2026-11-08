@@ -10,6 +10,7 @@ import com.example.data.GlobalSettingsEntity
 import com.example.data.HouseComputedStatus
 import com.example.data.PetEmpireRepository
 import com.example.data.PetTier
+import com.example.util.AlarmActionItem
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -57,9 +58,10 @@ class PetEmpireViewModel(
         viewModelScope.launch {
             repository.ensureSeeded(System.currentTimeMillis())
         }
+        // Active countdown timer loop: recomputes elapsed and remaining times every 1000ms
         viewModelScope.launch {
             while (true) {
-                delay(15_000L)
+                delay(1000L)
                 nowTickerFlow.value = System.currentTimeMillis()
             }
         }
@@ -305,6 +307,9 @@ class PetEmpireViewModel(
         }
     }
 
+    /**
+     * Direct exact adjustment of accumulated hours on a slot.
+     */
     fun adjustSlotHours(houseNumber: Int, slotIndex: Int, newHours: Double, keepRunning: Boolean? = null) {
         val nowMs = System.currentTimeMillis()
         nowTickerFlow.value = nowMs
@@ -337,6 +342,71 @@ class PetEmpireViewModel(
                         )
                     }
                     else -> house
+                }
+            }
+        }
+    }
+
+    /**
+     * Sets exactly how many remaining hours are left until this pet finishes its rank/bake.
+     * Computes elapsed = required - remaining.
+     */
+    fun setSlotRemainingHours(houseNumber: Int, slotIndex: Int, remainingHours: Double) {
+        val nowMs = System.currentTimeMillis()
+        nowTickerFlow.value = nowMs
+        val remClamped = remainingHours.coerceAtLeast(0.0)
+        viewModelScope.launch {
+            repository.updateHouse(houseNumber) { house ->
+                when (slotIndex) {
+                    1 -> {
+                        val req = PetTier.S_TIER_BAKE_HOURS
+                        val newAccumulated = (req - remClamped).coerceAtLeast(0.0)
+                        house.copy(
+                            slot1AccumulatedHours = newAccumulated,
+                            slot1LastStartedEpochMs = if (house.slot1Running) nowMs else null
+                        )
+                    }
+                    2 -> {
+                        val tier = PetTier.fromCode(house.slot2Tier)
+                        val req = if (tier == PetTier.A) 0.0 else tier.stageDurationHours
+                        val newAccumulated = (req - remClamped).coerceAtLeast(0.0)
+                        house.copy(
+                            slot2AccumulatedHours = newAccumulated,
+                            slot2LastStartedEpochMs = if (house.slot2Running) nowMs else null
+                        )
+                    }
+                    3 -> {
+                        val tier = PetTier.fromCode(house.slot3Tier)
+                        val req = if (tier == PetTier.A) 0.0 else tier.stageDurationHours
+                        val newAccumulated = (req - remClamped).coerceAtLeast(0.0)
+                        house.copy(
+                            slot3AccumulatedHours = newAccumulated,
+                            slot3LastStartedEpochMs = if (house.slot3Running) nowMs else null
+                        )
+                    }
+                    else -> house
+                }
+            }
+        }
+    }
+
+    /**
+     * Sets remaining hours left on an NPC replacement timer (against max 360h).
+     * Computes hoursUsed = maxHours - remainingHours.
+     */
+    fun setMacRemainingHours(houseNumber: Int, grade: PetTier, remainingHours: Double) {
+        val maxHours = uiState.value.settings.macMaxActiveHours
+        val remClamped = remainingHours.coerceIn(0.0, maxHours)
+        val used = (maxHours - remClamped).coerceAtLeast(0.0)
+        viewModelScope.launch {
+            repository.updateHouse(houseNumber) { house ->
+                when (grade) {
+                    PetTier.F -> house.copy(macFHoursUsed = used)
+                    PetTier.E -> house.copy(macEHoursUsed = used)
+                    PetTier.D -> house.copy(macDHoursUsed = used)
+                    PetTier.C -> house.copy(macCHoursUsed = used)
+                    PetTier.B -> house.copy(macBHoursUsed = used)
+                    PetTier.A -> house.copy(macAHoursUsed = used)
                 }
             }
         }
@@ -394,7 +464,87 @@ class PetEmpireViewModel(
         }
     }
 
-    // --- Empire-Wide Bulk Controls ---
+    // --- Empire-Wide Bulk Setups ---
+
+    /**
+     * User workflow example: "moved all B pets to A, C to B, and added an F pet in each house".
+     * Advances Slot 2 (B -> A), Slot 3 (C -> B or advances 1 tier), starts a fresh F tier, and resets elapsed to 0h.
+     */
+    fun applyEmpireBulkPromotionSetup() {
+        val nowMs = System.currentTimeMillis()
+        nowTickerFlow.value = nowMs
+        viewModelScope.launch {
+            repository.updateAllHouses { house ->
+                // Move Slot 2 to Grade A (ready for bake/harvest)
+                // Move Slot 3 (e.g. C) to Grade B
+                // Start slot 2 with Grade A or fresh slot 3 with fresh F
+                house.copy(
+                    slot1Running = true,
+                    slot1LastStartedEpochMs = nowMs,
+                    slot2Tier = "A",
+                    slot2Running = true,
+                    slot2AccumulatedHours = 0.0,
+                    slot2LastStartedEpochMs = nowMs,
+                    slot3Tier = "B",
+                    slot3Running = true,
+                    slot3AccumulatedHours = 0.0,
+                    slot3LastStartedEpochMs = nowMs
+                )
+            }
+        }
+    }
+
+    /**
+     * Collects all pending actions across all active houses (slot finish alarms & Mac expiry alarms)
+     * so a single button press can schedule every necessary clock alarm.
+     */
+    fun getAllEmpireAlarmActionItems(): List<AlarmActionItem> {
+        val state = uiState.value
+        val items = mutableListOf<AlarmActionItem>()
+
+        state.activeHouses.forEach { house ->
+            val num = house.entity.houseNumber
+            // Slot 1
+            if (house.slot1.isRunning && house.slot1.remainingHours > 0.02) {
+                items.add(
+                    AlarmActionItem(
+                        hoursFromNow = house.slot1.remainingHours,
+                        label = "House #$num: Slot 1 S-Tier Bake Complete"
+                    )
+                )
+            }
+            // Slot 2
+            if (house.slot2.isRunning && house.slot2.remainingHours > 0.02) {
+                items.add(
+                    AlarmActionItem(
+                        hoursFromNow = house.slot2.remainingHours,
+                        label = "House #$num: Slot 2 Tier ${house.slot2.tier.code} Complete"
+                    )
+                )
+            }
+            // Slot 3
+            if (house.slot3.isRunning && house.slot3.remainingHours > 0.02) {
+                items.add(
+                    AlarmActionItem(
+                        hoursFromNow = house.slot3.remainingHours,
+                        label = "House #$num: Slot 3 Tier ${house.slot3.tier.code} Complete"
+                    )
+                )
+            }
+            // Mac NPC Expiry (if < 48 hours remaining)
+            house.macTimers.filter { it.isExpiringSoon && it.hoursRemaining > 0.05 }.forEach { mac ->
+                items.add(
+                    AlarmActionItem(
+                        hoursFromNow = mac.hoursRemaining,
+                        label = "House #$num: Mac ${mac.grade.code} NPC Expired (360h)"
+                    )
+                )
+            }
+        }
+
+        return items
+    }
+
     fun pauseAllFinishedPets() {
         val nowMs = System.currentTimeMillis()
         nowTickerFlow.value = nowMs

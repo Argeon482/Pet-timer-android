@@ -17,6 +17,11 @@ data class AlarmScheduleResult(
     val hoursFromNow: Double
 )
 
+data class AlarmActionItem(
+    val hoursFromNow: Double,
+    val label: String
+)
+
 object AlarmHelper {
 
     fun computeTargetAlarmTime(hoursFromNow: Double, nowCalendar: Calendar = Calendar.getInstance()): Pair<Int, Int> {
@@ -75,6 +80,46 @@ object AlarmHelper {
             label = label,
             hoursFromNow = hoursFromNow
         )
+    }
+
+    /**
+     * Schedules a sequence of distinct alarms for multiple houses / actions
+     * using EXTRA_SKIP_UI=true for background registration, with the final or only alarm
+     * presenting the Clock UI so the user can verify all registered alarms.
+     */
+    fun scheduleBatchAlarms(
+        context: Context,
+        alarms: List<AlarmActionItem>
+    ): Pair<Int, String> {
+        if (alarms.isEmpty()) return 0 to "No active house timers require alarms."
+
+        // Group alarms that fall within the same minute to avoid creating duplicate alarms at the exact same minute
+        val distinctMinuteAlarms = alarms
+            .sortedBy { it.hoursFromNow }
+            .distinctBy {
+                val (h, m) = computeTargetAlarmTime(it.hoursFromNow)
+                "$h:$m"
+            }
+
+        var count = 0
+        distinctMinuteAlarms.forEachIndexed { index, item ->
+            val isLast = index == distinctMinuteAlarms.lastIndex
+            // skipUi = true for background alarms, false for the last one so the Clock app opens to view them
+            val res = scheduleClockAlarm(
+                context = context,
+                hoursFromNow = item.hoursFromNow,
+                label = item.label,
+                skipUi = !isLast
+            )
+            if (res.launchedClockApp) count++
+        }
+
+        val desc = if (distinctMinuteAlarms.size == 1) {
+            "Set 1 alarm for ${distinctMinuteAlarms.first().label}"
+        } else {
+            "Set ${distinctMinuteAlarms.size} distinct alarms across active houses in Clock app"
+        }
+        return count to desc
     }
 
     /**
