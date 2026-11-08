@@ -201,10 +201,10 @@ fun EconomySettingsScreen(
                         }
                     }
 
-                    // Server Inflation Quick Presets
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    // Reset Economy Defaults Button
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Start
                     ) {
                         OutlinedButton(
                             onClick = onResetDefaults,
@@ -212,23 +212,7 @@ fun EconomySettingsScreen(
                         ) {
                             Icon(Icons.Default.Restore, contentDescription = "Reset Defaults", modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Standard Default (1k fC = 500M)")
-                        }
-
-                        OutlinedButton(
-                            onClick = {
-                                fCoinRateText = "600000000"
-                                sTierPriceText = "145000000"
-                                aTierPriceText = "78000000"
-                                pushUpdate(
-                                    fCoinOverride = "600000000",
-                                    sTierOverride = "145000000",
-                                    aTierOverride = "78000000"
-                                )
-                            },
-                            modifier = Modifier.testTag("preset_high_inflation_button")
-                        ) {
-                            Text("High Inflation (1k fC = 600M)")
+                            Text("Reset Server Defaults (1k fC = 500M)")
                         }
                     }
                 }

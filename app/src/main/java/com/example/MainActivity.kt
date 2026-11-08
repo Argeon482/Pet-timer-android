@@ -321,14 +321,16 @@ fun PetEmpireApp(
                     onOpenHouseDetail = { viewModel.selectHouseForDetail(it) },
                     onPauseAllFinished = { viewModel.pauseAllFinishedPets() },
                     onSyncAllHourZero = { viewModel.synchronizeAllHousesToHarvestDayHourZero() },
-                    onApplyBulkPromotionSetup = { viewModel.applyEmpireBulkPromotionSetup() },
                     onSetAllRunning = { viewModel.setAllHousesRunningState(it) },
                     onScheduleClockAlarm = { hours, label -> triggerClockAlarm(hours, label) },
-                    onScheduleAllEmpireAlarms = {
-                        val actions = viewModel.getAllEmpireAlarmActionItems()
+                    onScheduleAllEmpireAlarms = { onlyChanged ->
+                        val actions = viewModel.getAllEmpireAlarmActionItems(onlyChanged = onlyChanged)
                         val (count, desc) = AlarmHelper.scheduleBatchAlarms(context, actions)
+                        if (onlyChanged && count > 0) {
+                            viewModel.clearAllChangedTimers()
+                        }
                         viewModel.notifyAlarmScheduled(
-                            if (count > 0) desc else "No active timers currently pending alarms."
+                            if (count > 0) desc else if (onlyChanged) "No changed timers pending alarms." else "No active timers currently pending alarms."
                         )
                     },
                     modifier = Modifier.padding(innerPadding)

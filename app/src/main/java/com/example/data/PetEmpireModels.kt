@@ -9,11 +9,11 @@ enum class PetTier(
     val stageDurationHours: Double,
     val cumulativeHoursToReach: Double
 ) {
-    F("F", "Grade F (Base)", 15.0, 0.0),
-    E("E", "Grade E", 25.0, 15.0),
-    D("D", "Grade D", 40.0, 40.0),
-    C("C", "Grade C", 55.0, 80.0),
-    B("B", "Grade B", 70.0, 135.0),
+    F("F", "Grade F (Base)", 10.0, 0.0),
+    E("E", "Grade E", 20.0, 10.0),
+    D("D", "Grade D", 50.0, 30.0),
+    C("C", "Grade C", 50.0, 80.0),
+    B("B", "Grade B", 75.0, 130.0),
     A("A", "Grade A (Bake Ready)", 250.0, 205.0);
 
     fun nextTier(): PetTier = when (this) {

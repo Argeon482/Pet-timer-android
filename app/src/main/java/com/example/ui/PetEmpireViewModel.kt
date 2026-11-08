@@ -26,6 +26,8 @@ enum class HouseFilter {
     PAUSED
 }
 
+data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
+
 data class PetEmpireUiState(
     val isLoading: Boolean = true,
     val settings: GlobalSettingsEntity = GlobalSettingsEntity(),
@@ -41,7 +43,8 @@ data class PetEmpireUiState(
     val expansionEvaluation: ExpansionPlanEvaluation = CalculationEngine.evaluateExpansionPlan(
         GlobalSettingsEntity()
     ),
-    val lastAlarmMessage: String? = null
+    val lastAlarmMessage: String? = null,
+    val pendingChangedAlarmsCount: Int = 0
 )
 
 class PetEmpireViewModel(
@@ -53,6 +56,7 @@ class PetEmpireViewModel(
     private val selectedHouseNumberFlow = MutableStateFlow<Int?>(null)
     private val nowTickerFlow = MutableStateFlow(System.currentTimeMillis())
     private val lastAlarmMessageFlow = MutableStateFlow<String?>(null)
+    private val changedTimerKeysFlow = MutableStateFlow<Set<String>>(emptySet())
 
     init {
         viewModelScope.launch {
@@ -72,10 +76,14 @@ class PetEmpireViewModel(
         repository.housesFlow,
         filterFlow,
         searchQueryFlow,
-        combine(selectedHouseNumberFlow, nowTickerFlow, lastAlarmMessageFlow) { sel, now, alarm ->
-            Triple(sel, now, alarm)
+        combine(selectedHouseNumberFlow, nowTickerFlow, lastAlarmMessageFlow, changedTimerKeysFlow) { sel, now, alarm, changedKeys ->
+            Tuple4(sel, now, alarm, changedKeys)
         }
-    ) { settings, houses, filter, query, (selectedHouseNum, nowMs, alarmMsg) ->
+    ) { settings, houses, filter, query, tuple ->
+        val selectedHouseNum = tuple.a
+        val nowMs = tuple.b
+        val alarmMsg = tuple.c
+        val changedKeys = tuple.d
         val computedAll = houses.map { house ->
             CalculationEngine.computeHouseStatus(house, settings, nowMs)
         }
@@ -109,7 +117,8 @@ class PetEmpireViewModel(
             selectedHouseDetail = detailHouse,
             summary = summary,
             expansionEvaluation = expansionEval,
-            lastAlarmMessage = alarmMsg
+            lastAlarmMessage = alarmMsg,
+            pendingChangedAlarmsCount = changedKeys.size
         )
     }.stateIn(
         scope = viewModelScope,
@@ -314,6 +323,7 @@ class PetEmpireViewModel(
         val nowMs = System.currentTimeMillis()
         nowTickerFlow.value = nowMs
         val clamped = newHours.coerceAtLeast(0.0)
+        markTimerChanged("h${houseNumber}_s$slotIndex")
         viewModelScope.launch {
             repository.updateHouse(houseNumber) { house ->
                 when (slotIndex) {
@@ -355,6 +365,7 @@ class PetEmpireViewModel(
         val nowMs = System.currentTimeMillis()
         nowTickerFlow.value = nowMs
         val remClamped = remainingHours.coerceAtLeast(0.0)
+        markTimerChanged("h${houseNumber}_s$slotIndex")
         viewModelScope.launch {
             repository.updateHouse(houseNumber) { house ->
                 when (slotIndex) {
@@ -398,6 +409,7 @@ class PetEmpireViewModel(
         val maxHours = uiState.value.settings.macMaxActiveHours
         val remClamped = remainingHours.coerceIn(0.0, maxHours)
         val used = (maxHours - remClamped).coerceAtLeast(0.0)
+        markTimerChanged("h${houseNumber}_mac_${grade.code}")
         viewModelScope.launch {
             repository.updateHouse(houseNumber) { house ->
                 when (grade) {
@@ -415,6 +427,7 @@ class PetEmpireViewModel(
     fun setPipelineSlotTier(houseNumber: Int, slotIndex: Int, tier: PetTier) {
         val nowMs = System.currentTimeMillis()
         nowTickerFlow.value = nowMs
+        markTimerChanged("h${houseNumber}_s$slotIndex")
         viewModelScope.launch {
             repository.updateHouse(houseNumber) { house ->
                 when (slotIndex) {
@@ -494,18 +507,29 @@ class PetEmpireViewModel(
         }
     }
 
+    fun markTimerChanged(key: String) {
+        changedTimerKeysFlow.value = changedTimerKeysFlow.value + key
+    }
+
+    fun clearAllChangedTimers() {
+        changedTimerKeysFlow.value = emptySet()
+    }
+
     /**
-     * Collects all pending actions across all active houses (slot finish alarms & Mac expiry alarms)
-     * so a single button press can schedule every necessary clock alarm.
+     * Collects pending actions across active houses.
+     * If [onlyChanged] is true, only returns actions for timers that were recently modified/set.
      */
-    fun getAllEmpireAlarmActionItems(): List<AlarmActionItem> {
+    fun getAllEmpireAlarmActionItems(onlyChanged: Boolean = false): List<AlarmActionItem> {
         val state = uiState.value
+        val changedKeys = changedTimerKeysFlow.value
         val items = mutableListOf<AlarmActionItem>()
 
         state.activeHouses.forEach { house ->
             val num = house.entity.houseNumber
+
             // Slot 1
-            if (house.slot1.isRunning && house.slot1.remainingHours > 0.02) {
+            val s1Key = "h${num}_s1"
+            if ((!onlyChanged || changedKeys.contains(s1Key)) && house.slot1.isRunning && house.slot1.remainingHours > 0.02) {
                 items.add(
                     AlarmActionItem(
                         hoursFromNow = house.slot1.remainingHours,
@@ -513,8 +537,10 @@ class PetEmpireViewModel(
                     )
                 )
             }
+
             // Slot 2
-            if (house.slot2.isRunning && house.slot2.remainingHours > 0.02) {
+            val s2Key = "h${num}_s2"
+            if ((!onlyChanged || changedKeys.contains(s2Key)) && house.slot2.isRunning && house.slot2.remainingHours > 0.02) {
                 items.add(
                     AlarmActionItem(
                         hoursFromNow = house.slot2.remainingHours,
@@ -522,8 +548,10 @@ class PetEmpireViewModel(
                     )
                 )
             }
+
             // Slot 3
-            if (house.slot3.isRunning && house.slot3.remainingHours > 0.02) {
+            val s3Key = "h${num}_s3"
+            if ((!onlyChanged || changedKeys.contains(s3Key)) && house.slot3.isRunning && house.slot3.remainingHours > 0.02) {
                 items.add(
                     AlarmActionItem(
                         hoursFromNow = house.slot3.remainingHours,
@@ -531,14 +559,18 @@ class PetEmpireViewModel(
                     )
                 )
             }
+
             // Mac NPC Expiry (if < 48 hours remaining)
             house.macTimers.filter { it.isExpiringSoon && it.hoursRemaining > 0.05 }.forEach { mac ->
-                items.add(
-                    AlarmActionItem(
-                        hoursFromNow = mac.hoursRemaining,
-                        label = "House #$num: Mac ${mac.grade.code} NPC Expired (360h)"
+                val macKey = "h${num}_mac_${mac.grade.code}"
+                if (!onlyChanged || changedKeys.contains(macKey)) {
+                    items.add(
+                        AlarmActionItem(
+                            hoursFromNow = mac.hoursRemaining,
+                            label = "House #$num: Mac ${mac.grade.code} NPC Expired (360h)"
+                        )
                     )
-                )
+                }
             }
         }
 

@@ -44,4 +44,16 @@ class ExampleUnitTest {
         // 18h out of 360h = 5% of 140 fCoins = 7 fCoins = 3,500,000 Penya wasted
         assertEquals(3_500_000L, status.slot1.wastedPenya)
     }
+
+    @Test
+    fun petTierHours_matchUserSpecification() {
+        assertEquals(250.0, com.example.data.PetTier.A.stageDurationHours, 0.001)
+        assertEquals(75.0, com.example.data.PetTier.B.stageDurationHours, 0.001)
+        assertEquals(50.0, com.example.data.PetTier.C.stageDurationHours, 0.001)
+        assertEquals(50.0, com.example.data.PetTier.D.stageDurationHours, 0.001)
+        assertEquals(20.0, com.example.data.PetTier.E.stageDurationHours, 0.001)
+        assertEquals(10.0, com.example.data.PetTier.F.stageDurationHours, 0.001)
+        // Total F-to-A ramp-up hours = 10 + 20 + 50 + 50 + 75 = 205h
+        assertEquals(205.0, com.example.data.PetTier.TOTAL_F_TO_A_RAMP_HOURS, 0.001)
+    }
 }

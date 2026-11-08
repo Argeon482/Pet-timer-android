@@ -105,14 +105,11 @@ fun HousesTrackerScreen(
     onOpenHouseDetail: (Int?) -> Unit,
     onPauseAllFinished: () -> Unit,
     onSyncAllHourZero: () -> Unit,
-    onApplyBulkPromotionSetup: () -> Unit,
     onSetAllRunning: (Boolean) -> Unit,
     onScheduleClockAlarm: (Double, String) -> Unit,
-    onScheduleAllEmpireAlarms: () -> Unit,
+    onScheduleAllEmpireAlarms: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var showPromotionConfirmDialog by remember { mutableStateOf(false) }
-
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -162,7 +159,7 @@ fun HousesTrackerScreen(
                         }
                     }
 
-                    // 1-BUTTON ALL HOUSES ALARM SYNC & QUICK SETUP
+                    // CLOCK ALARMS PANEL (CHANGED TIMERS & ALL TIMERS)
                     Surface(
                         color = PenyaGold.copy(alpha = 0.12f),
                         shape = RoundedCornerShape(14.dp),
@@ -171,7 +168,7 @@ fun HousesTrackerScreen(
                             .border(1.dp, PenyaGold.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
                     ) {
                         Column(
-                            modifier = Modifier.padding(12.dp),
+                            modifier = Modifier.padding(14.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Row(
@@ -182,55 +179,77 @@ fun HousesTrackerScreen(
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(
                                         imageVector = Icons.Default.NotificationsActive,
-                                        contentDescription = "All Alarms",
+                                        contentDescription = "Clock Alarms",
                                         tint = PenyaGold,
                                         modifier = Modifier.size(20.dp)
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = "1-Tap Clock Alarms (All Houses)",
+                                        text = "Sync Clock Alarms",
                                         style = MaterialTheme.typography.titleSmall,
                                         color = PenyaGold,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
-                                Text(
-                                    text = "Initial & Edited Setup",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+
+                                if (uiState.pendingChangedAlarmsCount > 0) {
+                                    Surface(
+                                        color = FCoinCyan.copy(alpha = 0.2f),
+                                        shape = RoundedCornerShape(50),
+                                        modifier = Modifier.border(1.dp, FCoinCyan, RoundedCornerShape(50))
+                                    ) {
+                                        Text(
+                                            text = "${uiState.pendingChangedAlarmsCount} Timers Edited",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = FCoinCyan,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
                             }
+
                             Text(
-                                text = "Pushes pending finish alarms and Mac NPC expiry warnings across all active houses to your system Clock app at once.",
+                                text = "Create new alarms in your Android Clock app. Choose to set alarms only for houses/slots you recently edited, or set alarms for all active houses.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color.White.copy(alpha = 0.9f)
                             )
+
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
+                                // Primary Button: Set alarms for ONLY what has been changed
                                 Button(
-                                    onClick = onScheduleAllEmpireAlarms,
+                                    onClick = { onScheduleAllEmpireAlarms(true) },
                                     colors = ButtonDefaults.buttonColors(
-                                        containerColor = PenyaGold,
+                                        containerColor = if (uiState.pendingChangedAlarmsCount > 0) FCoinCyan else PenyaGold,
                                         contentColor = ObsidianBackground
                                     ),
                                     modifier = Modifier
-                                        .weight(1f)
-                                        .testTag("set_all_houses_clock_alarms_button")
+                                        .weight(1.3f)
+                                        .testTag("set_changed_alarms_button")
                                 ) {
                                     Icon(Icons.Default.AccessAlarm, contentDescription = "Set Alarms", modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Set All Alarms To Clock", fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = if (uiState.pendingChangedAlarmsCount > 0) {
+                                            "Set Alarms for Changed (${uiState.pendingChangedAlarmsCount})"
+                                        } else {
+                                            "Set Alarms (Changed)"
+                                        },
+                                        fontWeight = FontWeight.Bold
+                                    )
                                 }
 
+                                // Secondary Button: Set alarms for ALL active houses
                                 OutlinedButton(
-                                    onClick = { showPromotionConfirmDialog = true },
-                                    modifier = Modifier.testTag("bulk_tier_promotion_button")
+                                    onClick = { onScheduleAllEmpireAlarms(false) },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("set_all_active_alarms_button")
                                 ) {
-                                    Icon(Icons.Default.TrendingUp, contentDescription = "Promote", modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("B→A & C→B Setup")
+                                    Text("Set All Alarms")
                                 }
                             }
                         }
@@ -439,35 +458,6 @@ fun HousesTrackerScreen(
                 onRenewAllMacGrades(detailHouse.entity.houseNumber)
             },
             onScheduleAlarm = onScheduleClockAlarm
-        )
-    }
-
-    // Bulk Promotion Setup Confirmation Dialog
-    if (showPromotionConfirmDialog) {
-        AlertDialog(
-            onDismissRequest = { showPromotionConfirmDialog = false },
-            title = { Text("Apply B→A and C→B Setup To All Houses?") },
-            text = {
-                Text(
-                    "This updates every active house across your empire: moves Slot 2 to Grade A, Slot 3 to Grade B, sets fresh 0h timers, and keeps them running. You can then tap 'Set All Alarms To Clock' to sync your alarms.",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        onApplyBulkPromotionSetup()
-                        showPromotionConfirmDialog = false
-                    }
-                ) {
-                    Text("Apply To All Houses")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showPromotionConfirmDialog = false }) {
-                    Text("Cancel")
-                }
-            }
         )
     }
 }
