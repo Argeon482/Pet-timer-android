@@ -1,0 +1,47 @@
+<resources>
+    <string name="app_name">Pet Empire</string>
+    <string name="nav_dashboard">Empire</string>
+    <string name="nav_houses">Houses</string>
+    <string name="nav_expansion">Expansion</string>
+    <string name="nav_settings">Economy</string>
+
+    <string name="dashboard_title">Flyff Pet Empire Manager</string>
+    <string name="dashboard_subtitle">40-House Scale • Peace of Mind 250h Cycle</string>
+    <string name="hero_banner_desc">Flyff Pet Empire Sanctuary Hero Banner</string>
+
+    <string name="section_empire_totals">Empire Financial Projections</string>
+    <string name="section_per_house_yield">Single House Cycle Breakdown (250h)</string>
+    <string name="section_expansion_power">Dynamic Expansion Power</string>
+    <string name="section_burn_alerts">Active Timer &amp; Overflow Burn Alerts</string>
+
+    <string name="label_gross_revenue">Gross Revenue / Cycle</string>
+    <string name="label_operating_cost">Operating Cost / Cycle</string>
+    <string name="label_net_profit_cycle">Net Profit / Cycle</string>
+    <string name="label_daily_net_profit">Daily Net Profit</string>
+    <string name="label_monthly_net_profit">Monthly Net (30d)</string>
+    <string name="label_active_fcoin_burn">Active fCoin Burn</string>
+
+    <string name="houses_title">House &amp; Mac NPC Tracker</string>
+    <string name="houses_subtitle">Manual Start/Pause controls • Zero auto-pause protection</string>
+    <string name="filter_all">All Houses</string>
+    <string name="filter_warnings">Burn / Expiry Warnings</string>
+    <string name="filter_running">Running</string>
+    <string name="filter_paused">Paused</string>
+
+    <string name="slot_1_title">Slot 1 • S-Tier Bake (Mac A)</string>
+    <string name="slot_2_title">Slot 2 • A-Tier Pipeline</string>
+    <string name="slot_3_title">Slot 3 • A-Tier Pipeline</string>
+
+    <string name="action_start">Start</string>
+    <string name="action_pause">Pause</string>
+    <string name="action_resume">Resume</string>
+    <string name="action_reset">Reset</string>
+    <string name="action_set_alarm">Set Clock Alarm</string>
+    <string name="action_harvest_sync">Harvest All &amp; Sync Hour 0</string>
+
+    <string name="expansion_title">Expansion &amp; Harvest Day Planner</string>
+    <string name="expansion_subtitle">Capital Calculator &amp; A-Pet Seeding Synchronization</string>
+    <string name="settings_title">Global Economy Variables</string>
+    <string name="settings_subtitle">Live server inflation, fCoin &amp; USD exchange rates</string>
+    <string name="action_reset_defaults">Reset to Default Server Economy</string>
+</resources>

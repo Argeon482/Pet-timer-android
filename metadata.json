@@ -1,0 +1,6 @@
+{
+  "name": "Pet Empire",
+  "description": "40-house Flyff Pet Empire manager with live Penya/fCoin economy, Mac NPC timer tracking, and Harvest Day expansion planner.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
