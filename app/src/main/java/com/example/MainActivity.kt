@@ -329,6 +329,20 @@ fun PetEmpireApp(
                     onPauseAllFinished = { viewModel.pauseAllFinishedPets() },
                     onSyncAllHourZero = { viewModel.synchronizeAllHousesToHarvestDayHourZero() },
                     onSetAllRunning = { viewModel.setAllHousesRunningState(it) },
+                    onBatchUpdateHouses = { houseNums, s1Hours, s1Run, s2Tier, s2Hours, s2Run, s3Tier, s3Hours, s3Run, macHours ->
+                        viewModel.batchUpdateHouses(
+                            houseNumbers = houseNums,
+                            slot1RemainingHours = s1Hours,
+                            slot1Running = s1Run,
+                            slot2Tier = s2Tier,
+                            slot2RemainingHours = s2Hours,
+                            slot2Running = s2Run,
+                            slot3Tier = s3Tier,
+                            slot3RemainingHours = s3Hours,
+                            slot3Running = s3Run,
+                            macRemainingHoursAll = macHours
+                        )
+                    },
                     onScheduleClockAlarm = { hours, label -> triggerClockAlarm(hours, label) },
                     onScheduleAllEmpireAlarms = { onlyChanged ->
                         val actions = viewModel.getAllEmpireAlarmActionItems(onlyChanged = onlyChanged)

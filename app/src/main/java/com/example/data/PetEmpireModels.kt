@@ -38,8 +38,8 @@ enum class PetTier(
 data class GlobalSettingsEntity(
     @PrimaryKey val id: Int = 1,
     val targetHouseCount: Int = 40, // Default: 40, Range: 1..50
-    val sTierSellPrice: Long = 120_000_000L, // Default: 120,000,000 Penya
-    val aTierSellPrice: Long = 65_000_000L, // Default: 65,000,000 Penya
+    val sTierSellPrice: Long = 220_000_000L, // Default: 220,000,000 Penya
+    val aTierSellPrice: Long = 120_000_000L, // Default: 120,000,000 Penya
     val fCoinExchangeRatePer1000: Long = 500_000_000L, // Default: 500M Penya per 1,000 fCoins (1 fCoin = 500k Penya)
     val penyaToUsdPer200M: Double = 3.09, // Default: $3.09 per 200,000,000 Penya
     val houseDeedCost: Long = 100_000_000L, // Default: 100,000,000 Penya
@@ -64,23 +64,23 @@ data class HouseEntity(
     val slot1AccumulatedHours: Double = 180.0,
     val slot1LastStartedEpochMs: Long? = null,
 
-    // Slot 2: A-Tier Pipeline 1 (Tracks F -> E -> D -> C -> B -> A)
+    // Slot 2: A-Tier Pipeline 1 (Default B)
     val slot2Tier: String = "B",
     val slot2Running: Boolean = true,
     val slot2AccumulatedHours: Double = 45.0,
     val slot2LastStartedEpochMs: Long? = null,
 
-    // Slot 3: A-Tier Pipeline 2 (Tracks F -> E -> D -> C -> B -> A)
+    // Slot 3: A-Tier Pipeline 2 (Default C)
     val slot3Tier: String = "C",
     val slot3Running: Boolean = true,
     val slot3AccumulatedHours: Double = 30.0,
     val slot3LastStartedEpochMs: Long? = null,
 
-    // Physical 360-hour cash shop timers per Mac NPC grade (F, E, D, C, B, A)
-    val macFHoursUsed: Double = 90.0,
-    val macEHoursUsed: Double = 110.0,
-    val macDHoursUsed: Double = 135.0,
-    val macCHoursUsed: Double = 160.0,
-    val macBHoursUsed: Double = 195.0,
-    val macAHoursUsed: Double = 180.0
+    // Physical 360-hour cash shop timers per Mac NPC grade (F, E, D, C, B, A) - Default 0.0 used (360.0h remaining)
+    val macFHoursUsed: Double = 0.0,
+    val macEHoursUsed: Double = 0.0,
+    val macDHoursUsed: Double = 0.0,
+    val macCHoursUsed: Double = 0.0,
+    val macBHoursUsed: Double = 0.0,
+    val macAHoursUsed: Double = 0.0
 )

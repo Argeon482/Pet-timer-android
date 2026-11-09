@@ -3,28 +3,60 @@ package com.example
 import com.example.data.CalculationEngine
 import com.example.data.GlobalSettingsEntity
 import com.example.data.HouseEntity
+import com.example.data.PetTier
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ExampleUnitTest {
     @Test
-    fun default40HousePeaceOfMindCycle_matchesSpecification() {
+    fun default40HousePeaceOfMindCycle_matchesUpdatedDefaults() {
         val settings = GlobalSettingsEntity()
+        assertEquals(220_000_000L, settings.sTierSellPrice)
+        assertEquals(120_000_000L, settings.aTierSellPrice)
+
         val summary = CalculationEngine.computeEmpireSummary(settings, emptyList())
 
         // Per-House / Cycle (250 hours / 10.42 days)
-        assertEquals(185_000_000L, summary.grossRevenuePerHouseCycle)
+        assertEquals(340_000_000L, summary.grossRevenuePerHouseCycle)
         assertEquals(137_500_000L, summary.operatingCostPerHouseCycle)
-        assertEquals(47_500_000L, summary.netProfitPerHouseCycle)
-        assertEquals(4_560_000L, summary.dailyNetProfitPerHouse)
+        assertEquals(202_500_000L, summary.netProfitPerHouseCycle)
+        assertEquals(19_440_000L, summary.dailyNetProfitPerHouse)
 
         // 40-House Empire Totals
-        assertEquals(7_400_000_000L, summary.empireGrossRevenueCycle)
+        assertEquals(13_600_000_000L, summary.empireGrossRevenueCycle)
         assertEquals(5_500_000_000L, summary.empireOperatingCostCycle)
-        assertEquals(1_900_000_000L, summary.empireNetProfitCycle)
-        assertEquals(182_400_000L, summary.empireDailyNetProfit)
-        assertEquals(5_472_000_000L, summary.empireMonthlyNetProfit)
+        assertEquals(8_100_000_000L, summary.empireNetProfitCycle)
+        assertEquals(777_600_000L, summary.empireDailyNetProfit)
+        assertEquals(23_328_000_000L, summary.empireMonthlyNetProfit)
+    }
+
+    @Test
+    fun defaultHouseEntity_hasSlotsABCAnd360HourMacTimers() {
+        val house = HouseEntity(houseNumber = 1)
+        // Slot 1 is the S bake (Grade A)
+        // Slot 2 must default to B
+        // Slot 3 must default to C
+        assertEquals("B", house.slot2Tier)
+        assertEquals("C", house.slot3Tier)
+        assertNotEquals(house.slot2Tier, house.slot3Tier)
+        assertNotEquals("A", house.slot2Tier)
+        assertNotEquals("A", house.slot3Tier)
+
+        // NPC replacement hours used must default to 0.0 (which equals 360h remaining)
+        assertEquals(0.0, house.macFHoursUsed, 0.001)
+        assertEquals(0.0, house.macEHoursUsed, 0.001)
+        assertEquals(0.0, house.macDHoursUsed, 0.001)
+        assertEquals(0.0, house.macCHoursUsed, 0.001)
+        assertEquals(0.0, house.macBHoursUsed, 0.001)
+        assertEquals(0.0, house.macAHoursUsed, 0.001)
+
+        val settings = GlobalSettingsEntity()
+        val status = CalculationEngine.computeHouseStatus(house, settings, 0L)
+        status.macTimers.forEach { mac ->
+            assertEquals(360.0, mac.hoursRemaining, 0.001)
+        }
     }
 
     @Test
@@ -47,14 +79,14 @@ class ExampleUnitTest {
 
     @Test
     fun petTierHours_matchUserSpecification() {
-        assertEquals(250.0, com.example.data.PetTier.A.stageDurationHours, 0.001)
-        assertEquals(75.0, com.example.data.PetTier.B.stageDurationHours, 0.001)
-        assertEquals(50.0, com.example.data.PetTier.C.stageDurationHours, 0.001)
-        assertEquals(50.0, com.example.data.PetTier.D.stageDurationHours, 0.001)
-        assertEquals(20.0, com.example.data.PetTier.E.stageDurationHours, 0.001)
-        assertEquals(10.0, com.example.data.PetTier.F.stageDurationHours, 0.001)
+        assertEquals(250.0, PetTier.A.stageDurationHours, 0.001)
+        assertEquals(75.0, PetTier.B.stageDurationHours, 0.001)
+        assertEquals(50.0, PetTier.C.stageDurationHours, 0.001)
+        assertEquals(50.0, PetTier.D.stageDurationHours, 0.001)
+        assertEquals(20.0, PetTier.E.stageDurationHours, 0.001)
+        assertEquals(10.0, PetTier.F.stageDurationHours, 0.001)
         // Total F-to-A ramp-up hours = 10 + 20 + 50 + 50 + 75 = 205h
-        assertEquals(205.0, com.example.data.PetTier.TOTAL_F_TO_A_RAMP_HOURS, 0.001)
+        assertEquals(205.0, PetTier.TOTAL_F_TO_A_RAMP_HOURS, 0.001)
     }
 
     @Test
@@ -80,13 +112,11 @@ class ExampleUnitTest {
                 label = "House #4: Grade C → B Ready",
                 categoryKey = "tier_C_to_B"
             ),
-            // Distinct category at 12.1h: should NOT merge with C->B
             com.example.util.AlarmActionItem(
                 hoursFromNow = 12.1,
                 label = "House #5: Grade B → A Ready",
                 categoryKey = "tier_B_to_A"
             ),
-            // Grade C at 15.0h: >1 hour after 12.0h -> separate cluster
             com.example.util.AlarmActionItem(
                 hoursFromNow = 15.0,
                 label = "House #6: Grade C → B Ready",
@@ -95,10 +125,6 @@ class ExampleUnitTest {
         )
 
         val consolidated = com.example.util.AlarmHelper.consolidateAlarmItems(raw)
-        // Expected:
-        // 1. Earliest C->B cluster: hours = 12.0, clusterCount = 4
-        // 2. B->A item: hours = 12.1, clusterCount = 1
-        // 3. Later C->B item: hours = 15.0, clusterCount = 1
         assertEquals(3, consolidated.size)
 
         val cluster1 = consolidated.first { it.categoryKey == "tier_C_to_B" && it.hoursFromNow < 13.0 }

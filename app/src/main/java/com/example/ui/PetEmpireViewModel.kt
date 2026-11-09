@@ -426,25 +426,149 @@ class PetEmpireViewModel(
     }
 
     fun setPipelineSlotTier(houseNumber: Int, slotIndex: Int, tier: PetTier) {
+        if (tier == PetTier.A) return // Slot 1 is already Grade A; Slots 2 and 3 cannot be A
         val nowMs = System.currentTimeMillis()
         nowTickerFlow.value = nowMs
         markTimerChanged("h${houseNumber}_s$slotIndex")
         viewModelScope.launch {
             repository.updateHouse(houseNumber) { house ->
                 when (slotIndex) {
-                    2 -> house.copy(
-                        slot2Tier = tier.code,
-                        slot2AccumulatedHours = 0.0,
-                        slot2LastStartedEpochMs = if (house.slot2Running) nowMs else null
-                    )
-                    3 -> house.copy(
-                        slot3Tier = tier.code,
-                        slot3AccumulatedHours = 0.0,
-                        slot3LastStartedEpochMs = if (house.slot3Running) nowMs else null
-                    )
+                    2 -> {
+                        // Cannot have 2 pets of same class in one house
+                        if (tier.code.equals(house.slot3Tier, ignoreCase = true)) {
+                            house
+                        } else {
+                            house.copy(
+                                slot2Tier = tier.code,
+                                slot2AccumulatedHours = 0.0,
+                                slot2LastStartedEpochMs = if (house.slot2Running) nowMs else null
+                            )
+                        }
+                    }
+                    3 -> {
+                        // Cannot have 2 pets of same class in one house
+                        if (tier.code.equals(house.slot2Tier, ignoreCase = true)) {
+                            house
+                        } else {
+                            house.copy(
+                                slot3Tier = tier.code,
+                                slot3AccumulatedHours = 0.0,
+                                slot3LastStartedEpochMs = if (house.slot3Running) nowMs else null
+                            )
+                        }
+                    }
                     else -> house
                 }
             }
+        }
+    }
+
+    /**
+     * Batch updates multiple selected houses at once.
+     */
+    fun batchUpdateHouses(
+        houseNumbers: Set<Int>,
+        slot1RemainingHours: Double?,
+        slot1Running: Boolean?,
+        slot2Tier: PetTier?,
+        slot2RemainingHours: Double?,
+        slot2Running: Boolean?,
+        slot3Tier: PetTier?,
+        slot3RemainingHours: Double?,
+        slot3Running: Boolean?,
+        macRemainingHoursAll: Double?
+    ) {
+        if (houseNumbers.isEmpty()) return
+        val nowMs = System.currentTimeMillis()
+        nowTickerFlow.value = nowMs
+        val maxMac = uiState.value.settings.macMaxActiveHours
+
+        viewModelScope.launch {
+            repository.updateAllHouses { house ->
+                if (house.houseNumber !in houseNumbers) {
+                    house
+                } else {
+                    var updated = house
+
+                    // Slot 1: S-Tier Bake
+                    if (slot1Running != null) {
+                        updated = updated.copy(
+                            slot1Running = slot1Running,
+                            slot1LastStartedEpochMs = if (slot1Running) nowMs else null
+                        )
+                    }
+                    if (slot1RemainingHours != null) {
+                        val req = PetTier.S_TIER_BAKE_HOURS
+                        val newAccum = (req - slot1RemainingHours.coerceAtLeast(0.0)).coerceAtLeast(0.0)
+                        updated = updated.copy(
+                            slot1AccumulatedHours = newAccum,
+                            slot1LastStartedEpochMs = if (updated.slot1Running) nowMs else null
+                        )
+                    }
+
+                    // Slot 2 & Slot 3 Tiers (Enforce A, B, C rule: no A for slots 2/3, and slot2 != slot3)
+                    val desiredS2 = slot2Tier ?: PetTier.fromCode(updated.slot2Tier)
+                    val desiredS3 = slot3Tier ?: PetTier.fromCode(updated.slot3Tier)
+
+                    val safeS2 = if (desiredS2 == PetTier.A) PetTier.B else desiredS2
+                    var safeS3 = if (desiredS3 == PetTier.A) PetTier.C else desiredS3
+                    if (safeS2 == safeS3) {
+                        safeS3 = if (safeS2 == PetTier.B) PetTier.C else PetTier.B
+                    }
+
+                    if (slot2Tier != null) {
+                        updated = updated.copy(slot2Tier = safeS2.code)
+                    }
+                    if (slot2Running != null) {
+                        updated = updated.copy(
+                            slot2Running = slot2Running,
+                            slot2LastStartedEpochMs = if (slot2Running) nowMs else null
+                        )
+                    }
+                    if (slot2RemainingHours != null) {
+                        val req = safeS2.stageDurationHours
+                        val newAccum = (req - slot2RemainingHours.coerceAtLeast(0.0)).coerceAtLeast(0.0)
+                        updated = updated.copy(
+                            slot2AccumulatedHours = newAccum,
+                            slot2LastStartedEpochMs = if (updated.slot2Running) nowMs else null
+                        )
+                    }
+
+                    if (slot3Tier != null) {
+                        updated = updated.copy(slot3Tier = safeS3.code)
+                    }
+                    if (slot3Running != null) {
+                        updated = updated.copy(
+                            slot3Running = slot3Running,
+                            slot3LastStartedEpochMs = if (slot3Running) nowMs else null
+                        )
+                    }
+                    if (slot3RemainingHours != null) {
+                        val req = safeS3.stageDurationHours
+                        val newAccum = (req - slot3RemainingHours.coerceAtLeast(0.0)).coerceAtLeast(0.0)
+                        updated = updated.copy(
+                            slot3AccumulatedHours = newAccum,
+                            slot3LastStartedEpochMs = if (updated.slot3Running) nowMs else null
+                        )
+                    }
+
+                    // NPC Replacement Timers (360h default)
+                    if (macRemainingHoursAll != null) {
+                        val used = (maxMac - macRemainingHoursAll.coerceIn(0.0, maxMac)).coerceAtLeast(0.0)
+                        updated = updated.copy(
+                            macFHoursUsed = used,
+                            macEHoursUsed = used,
+                            macDHoursUsed = used,
+                            macCHoursUsed = used,
+                            macBHoursUsed = used,
+                            macAHoursUsed = used
+                        )
+                    }
+
+                    updated
+                }
+            }
+            notifyAlarmScheduled("Updated ${houseNumbers.size} houses successfully")
         }
     }
 
@@ -633,14 +757,20 @@ class PetEmpireViewModel(
                     slot1Running = true,
                     slot1AccumulatedHours = 0.0,
                     slot1LastStartedEpochMs = nowMs,
-                    slot2Tier = "F",
+                    slot2Tier = "B",
                     slot2Running = true,
                     slot2AccumulatedHours = 0.0,
                     slot2LastStartedEpochMs = nowMs,
-                    slot3Tier = "F",
+                    slot3Tier = "C",
                     slot3Running = true,
                     slot3AccumulatedHours = 0.0,
-                    slot3LastStartedEpochMs = nowMs
+                    slot3LastStartedEpochMs = nowMs,
+                    macFHoursUsed = 0.0,
+                    macEHoursUsed = 0.0,
+                    macDHoursUsed = 0.0,
+                    macCHoursUsed = 0.0,
+                    macBHoursUsed = 0.0,
+                    macAHoursUsed = 0.0
                 )
             }
         }

@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessAlarm
 import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.NotificationsActive
@@ -32,7 +33,6 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AlertDialog
@@ -40,6 +40,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -49,14 +51,11 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -86,7 +85,6 @@ import com.example.ui.theme.ObsidianCard
 import com.example.ui.theme.ObsidianElevated
 import com.example.ui.theme.PenyaGold
 import java.util.Locale
-import kotlin.math.roundToInt
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -106,10 +104,21 @@ fun HousesTrackerScreen(
     onPauseAllFinished: () -> Unit,
     onSyncAllHourZero: () -> Unit,
     onSetAllRunning: (Boolean) -> Unit,
+    onBatchUpdateHouses: (Set<Int>, Double?, Boolean?, PetTier?, Double?, Boolean?, PetTier?, Double?, Boolean?, Double?) -> Unit,
     onScheduleClockAlarm: (Double, String) -> Unit,
     onScheduleAllEmpireAlarms: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Multi-selection state for house cards
+    var selectedHouseNumbers by remember { mutableStateOf(setOf<Int>()) }
+    var showBatchSetupDialog by remember { mutableStateOf(false) }
+
+    // Confirmation dialog states to prevent accidents
+    var showConfirmSyncZeroDialog by remember { mutableStateOf(false) }
+    var showConfirmPauseAllDialog by remember { mutableStateOf(false) }
+    var showConfirmResumeAllDialog by remember { mutableStateOf(false) }
+    var showConfirmPauseFinishedDialog by remember { mutableStateOf(false) }
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -135,12 +144,12 @@ fun HousesTrackerScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "40-House & Manual Mac NPC Tracker",
+                                text = "40-House & Mac NPC Tracker",
                                 style = MaterialTheme.typography.titleLarge,
                                 color = Color.White
                             )
                             Text(
-                                text = "Active countdown • Exact remaining hours controls • 1-Button bulk alarms",
+                                text = "Multi-select cards • Direct hours input • 1-tap alarms",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -219,7 +228,6 @@ fun HousesTrackerScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                // Primary Button: Set alarms for ONLY what has been changed
                                 Button(
                                     onClick = { onScheduleAllEmpireAlarms(true) },
                                     colors = ButtonDefaults.buttonColors(
@@ -234,7 +242,7 @@ fun HousesTrackerScreen(
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
                                         text = if (uiState.pendingChangedAlarmsCount > 0) {
-                                            "Set Alarms for Changed (${uiState.pendingChangedAlarmsCount})"
+                                            "Set Alarms (Changed: ${uiState.pendingChangedAlarmsCount})"
                                         } else {
                                             "Set Alarms (Changed)"
                                         },
@@ -242,7 +250,6 @@ fun HousesTrackerScreen(
                                     )
                                 }
 
-                                // Secondary Button: Set alarms for ALL active houses
                                 OutlinedButton(
                                     onClick = { onScheduleAllEmpireAlarms(false) },
                                     modifier = Modifier
@@ -314,13 +321,13 @@ fun HousesTrackerScreen(
                         )
                     }
 
-                    // Bulk Action Row
+                    // Bulk Action Row with Confirmation Triggers
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Button(
-                            onClick = onPauseAllFinished,
+                            onClick = { showConfirmPauseFinishedDialog = true },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = CrimsonBurnAlert,
                                 contentColor = Color.White
@@ -334,7 +341,7 @@ fun HousesTrackerScreen(
                         }
 
                         OutlinedButton(
-                            onClick = onSyncAllHourZero,
+                            onClick = { showConfirmSyncZeroDialog = true },
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                             modifier = Modifier.testTag("bulk_sync_hour_zero_button")
                         ) {
@@ -344,7 +351,7 @@ fun HousesTrackerScreen(
                         }
 
                         OutlinedButton(
-                            onClick = { onSetAllRunning(false) },
+                            onClick = { showConfirmPauseAllDialog = true },
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                             modifier = Modifier.testTag("bulk_pause_all_button")
                         ) {
@@ -352,11 +359,89 @@ fun HousesTrackerScreen(
                         }
 
                         OutlinedButton(
-                            onClick = { onSetAllRunning(true) },
+                            onClick = { showConfirmResumeAllDialog = true },
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                             modifier = Modifier.testTag("bulk_resume_all_button")
                         ) {
                             Text("Resume All", style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Multi-Selection Active Action Bar
+        if (selectedHouseNumbers.isNotEmpty()) {
+            item {
+                Surface(
+                    color = ObsidianCard,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.5.dp, PenyaGold, RoundedCornerShape(16.dp))
+                        .testTag("multi_select_action_bar")
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "${selectedHouseNumbers.size} Houses Selected",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = PenyaGold,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Setup once, apply to all selected",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Button(
+                                onClick = { showBatchSetupDialog = true },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = PenyaGold,
+                                    contentColor = ObsidianBackground
+                                ),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                modifier = Modifier.testTag("open_batch_setup_dialog_button")
+                            ) {
+                                Icon(Icons.Default.Tune, contentDescription = "Batch Edit", modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Batch Edit (${selectedHouseNumbers.size})", fontWeight = FontWeight.Bold)
+                            }
+
+                            val allFilteredIds = uiState.filteredHouses.map { it.entity.houseNumber }.toSet()
+                            val allSelected = allFilteredIds.isNotEmpty() && selectedHouseNumbers.containsAll(allFilteredIds)
+
+                            OutlinedButton(
+                                onClick = {
+                                    selectedHouseNumbers = if (allSelected) {
+                                        emptySet()
+                                    } else {
+                                        selectedHouseNumbers + allFilteredIds
+                                    }
+                                },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                            ) {
+                                Text(if (allSelected) "Deselect" else "Select All")
+                            }
+
+                            IconButton(
+                                onClick = { selectedHouseNumbers = emptySet() },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear Selection", tint = Color.White)
+                            }
                         }
                     }
                 }
@@ -405,28 +490,179 @@ fun HousesTrackerScreen(
             items = uiState.filteredHouses,
             key = { it.entity.houseNumber }
         ) { houseStatus ->
+            val houseNum = houseStatus.entity.houseNumber
+            val isSelected = houseNum in selectedHouseNumbers
+
             HouseTrackerCard(
                 houseStatus = houseStatus,
+                isSelected = isSelected,
+                onToggleSelect = {
+                    selectedHouseNumbers = if (isSelected) {
+                        selectedHouseNumbers - houseNum
+                    } else {
+                        selectedHouseNumbers + houseNum
+                    }
+                },
                 onToggleSlot = { slotIdx ->
-                    onToggleSlotRunning(houseStatus.entity.houseNumber, slotIdx)
+                    onToggleSlotRunning(houseNum, slotIdx)
                 },
                 onResetSlot = { slotIdx ->
-                    onResetSlotTimer(houseStatus.entity.houseNumber, slotIdx)
+                    onResetSlotTimer(houseNum, slotIdx)
                 },
                 onAdvanceTier = { slotIdx, nextTier ->
-                    onSetPipelineSlotTier(houseStatus.entity.houseNumber, slotIdx, nextTier)
+                    onSetPipelineSlotTier(houseNum, slotIdx, nextTier)
                 },
                 onScheduleAlarm = { hours, label ->
                     onScheduleClockAlarm(hours, label)
                 },
                 onOpenDetail = {
-                    onOpenHouseDetail(houseStatus.entity.houseNumber)
+                    onOpenHouseDetail(houseNum)
                 }
             )
         }
     }
 
-    // Detailed House Inspector with Fine Remaining Hours Controls
+    // Confirmation Dialog: Sync All to Hour Zero
+    if (showConfirmSyncZeroDialog) {
+        AlertDialog(
+            onDismissRequest = { showConfirmSyncZeroDialog = false },
+            containerColor = ObsidianCard,
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.WarningAmber, contentDescription = null, tint = AmberWarning)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Confirm Sync to Hour 0", color = Color.White)
+                }
+            },
+            text = {
+                Text(
+                    text = "Are you sure you want to synchronize all houses to Hour 0? This resets all pet slots to the default A, B, C setup, restarts all timers, and resets Mac NPC replacement timers to 360 hours.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showConfirmSyncZeroDialog = false
+                        onSyncAllHourZero()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = PenyaGold, contentColor = ObsidianBackground),
+                    modifier = Modifier.testTag("confirm_sync_zero_button")
+                ) {
+                    Text("Confirm Sync", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirmSyncZeroDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Confirmation Dialog: Pause All
+    if (showConfirmPauseAllDialog) {
+        AlertDialog(
+            onDismissRequest = { showConfirmPauseAllDialog = false },
+            containerColor = ObsidianCard,
+            title = { Text("Pause All Houses?", color = Color.White) },
+            text = { Text("This will pause pet progression across all active houses.", color = MaterialTheme.colorScheme.onSurfaceVariant) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showConfirmPauseAllDialog = false
+                        onSetAllRunning(false)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = AmberWarning, contentColor = ObsidianBackground)
+                ) {
+                    Text("Confirm Pause", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirmPauseAllDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Confirmation Dialog: Resume All
+    if (showConfirmResumeAllDialog) {
+        AlertDialog(
+            onDismissRequest = { showConfirmResumeAllDialog = false },
+            containerColor = ObsidianCard,
+            title = { Text("Resume All Houses?", color = Color.White) },
+            text = { Text("This will resume timer progression across all active houses.", color = MaterialTheme.colorScheme.onSurfaceVariant) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showConfirmResumeAllDialog = false
+                        onSetAllRunning(true)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldProfit, contentColor = ObsidianBackground)
+                ) {
+                    Text("Confirm Resume", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirmResumeAllDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Confirmation Dialog: Stop Overflow Burn
+    if (showConfirmPauseFinishedDialog) {
+        AlertDialog(
+            onDismissRequest = { showConfirmPauseFinishedDialog = false },
+            containerColor = ObsidianCard,
+            title = { Text("Stop Overflow Burn?", color = Color.White) },
+            text = { Text("This will immediately pause any 100% finished pets that are still running to prevent wasting Penya.", color = MaterialTheme.colorScheme.onSurfaceVariant) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showConfirmPauseFinishedDialog = false
+                        onPauseAllFinished()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = CrimsonBurnAlert, contentColor = Color.White)
+                ) {
+                    Text("Confirm Pause Finished", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirmPauseFinishedDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Batch House Setup Dialog (Multi-Select)
+    if (showBatchSetupDialog && selectedHouseNumbers.isNotEmpty()) {
+        BatchHouseSetupDialog(
+            selectedHouseNumbers = selectedHouseNumbers,
+            macMaxHours = uiState.settings.macMaxActiveHours,
+            onDismiss = { showBatchSetupDialog = false },
+            onApply = { s1Hours, s1Run, s2Tier, s2Hours, s2Run, s3Tier, s3Hours, s3Run, macHours ->
+                onBatchUpdateHouses(
+                    selectedHouseNumbers,
+                    s1Hours,
+                    s1Run,
+                    s2Tier,
+                    s2Hours,
+                    s2Run,
+                    s3Tier,
+                    s3Hours,
+                    s3Run,
+                    macHours
+                )
+                showBatchSetupDialog = false
+            }
+        )
+    }
+
+    // Detailed Single House Inspector Dialog
     val detailHouse = uiState.selectedHouseDetail
     if (detailHouse != null) {
         HouseDetailDialog(
@@ -465,6 +701,8 @@ fun HousesTrackerScreen(
 @Composable
 private fun HouseTrackerCard(
     houseStatus: HouseComputedStatus,
+    isSelected: Boolean,
+    onToggleSelect: () -> Unit,
     onToggleSlot: (Int) -> Unit,
     onResetSlot: (Int) -> Unit,
     onAdvanceTier: (Int, PetTier) -> Unit,
@@ -473,6 +711,7 @@ private fun HouseTrackerCard(
 ) {
     val houseNum = houseStatus.entity.houseNumber
     val borderColor = when {
+        isSelected -> PenyaGold
         houseStatus.hasOverflowWarning -> CrimsonBurnAlert
         houseStatus.hasExpiryWarning -> AmberWarning
         else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)
@@ -481,11 +720,13 @@ private fun HouseTrackerCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.2.dp, borderColor, RoundedCornerShape(20.dp))
+            .border(if (isSelected) 2.dp else 1.2.dp, borderColor, RoundedCornerShape(20.dp))
             .clickable { onOpenDetail() }
             .testTag("house_card_$houseNum"),
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = ObsidianCard)
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) ObsidianCard.copy(alpha = 0.95f) else ObsidianCard
+        )
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -498,6 +739,17 @@ private fun HouseTrackerCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = isSelected,
+                        onCheckedChange = { onToggleSelect() },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = PenyaGold,
+                            uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            checkmarkColor = ObsidianBackground
+                        ),
+                        modifier = Modifier.testTag("house_${houseNum}_checkbox")
+                    )
+
                     Surface(
                         color = PenyaGold.copy(alpha = 0.2f),
                         shape = RoundedCornerShape(10.dp)
@@ -586,14 +838,18 @@ private fun HouseTrackerCard(
                 }
             )
 
-            // Slot 2: A-Tier Pipeline 1
+            // Slot 2: Pipeline (defaults B, cannot be A or equal to Slot 3)
+            val canAdvanceS2 = houseStatus.slot2.tier != PetTier.A &&
+                houseStatus.slot2.tier.nextTier() != PetTier.A &&
+                houseStatus.slot2.tier.nextTier() != houseStatus.slot3.tier
+
             SlotControlRow(
                 houseNumber = houseNum,
                 slot = houseStatus.slot2,
                 accentColor = FCoinCyan,
                 onToggle = { onToggleSlot(2) },
                 onReset = { onResetSlot(2) },
-                onAdvanceTier = if (houseStatus.slot2.tier != PetTier.A) {
+                onAdvanceTier = if (canAdvanceS2) {
                     { onAdvanceTier(2, houseStatus.slot2.tier.nextTier()) }
                 } else null,
                 onScheduleAlarm = {
@@ -602,14 +858,18 @@ private fun HouseTrackerCard(
                 }
             )
 
-            // Slot 3: A-Tier Pipeline 2
+            // Slot 3: Pipeline (defaults C, cannot be A or equal to Slot 2)
+            val canAdvanceS3 = houseStatus.slot3.tier != PetTier.A &&
+                houseStatus.slot3.tier.nextTier() != PetTier.A &&
+                houseStatus.slot3.tier.nextTier() != houseStatus.slot2.tier
+
             SlotControlRow(
                 houseNumber = houseNum,
                 slot = houseStatus.slot3,
                 accentColor = EmeraldProfit,
                 onToggle = { onToggleSlot(3) },
                 onReset = { onResetSlot(3) },
-                onAdvanceTier = if (houseStatus.slot3.tier != PetTier.A) {
+                onAdvanceTier = if (canAdvanceS3) {
                     { onAdvanceTier(3, houseStatus.slot3.tier.nextTier()) }
                 } else null,
                 onScheduleAlarm = {
@@ -632,7 +892,7 @@ private fun HouseTrackerCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Mac NPC Physical Timers (Grades F–A)",
+                        text = "Mac NPC Physical Timers (Grades F–A • 360h Default)",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -741,7 +1001,6 @@ private fun SlotControlRow(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Start / Pause Manual Toggle Button
                 Button(
                     onClick = onToggle,
                     colors = ButtonDefaults.buttonColors(
@@ -875,6 +1134,11 @@ private fun MacMiniPill(
     }
 }
 
+/**
+ * Detailed House Inspector Dialog
+ * Sliders replaced with direct numeric input boxes + preset chips.
+ * Pet tier selectors for slots 2 & 3 enforce no duplicates in the same house.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun HouseDetailDialog(
@@ -892,6 +1156,7 @@ private fun HouseDetailDialog(
     onScheduleAlarm: (Double, String) -> Unit
 ) {
     val houseNum = houseStatus.entity.houseNumber
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -911,7 +1176,7 @@ private fun HouseDetailDialog(
                 verticalArrangement = Arrangement.spacedBy(14.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                // Slot 1: Fine Remaining Hours & Rank Controls
+                // Slot 1: S-Tier Bake (Mac Grade A, 250h)
                 item {
                     FineTuningSlotBlock(
                         slot = houseStatus.slot1,
@@ -927,11 +1192,12 @@ private fun HouseDetailDialog(
                                 houseStatus.slot1.remainingHours.coerceAtLeast(0.05),
                                 "House #$houseNum: Slot 1 S-Tier Bake Complete"
                             )
-                        }
+                        },
+                        disallowedTiers = setOf(PetTier.A, PetTier.B, PetTier.C, PetTier.D, PetTier.E, PetTier.F) // Fixed to A bake
                     )
                 }
 
-                // Slot 2: Fine Remaining Hours & Tier Selector
+                // Slot 2: Pipeline Slot 2 (Cannot be A, cannot match Slot 3 tier)
                 item {
                     FineTuningSlotBlock(
                         slot = houseStatus.slot2,
@@ -948,11 +1214,13 @@ private fun HouseDetailDialog(
                                 "House #$houseNum: Slot 2 Tier ${houseStatus.slot2.tier.code} Complete"
                             )
                         },
+                        disallowedTiers = setOf(PetTier.A, houseStatus.slot3.tier),
+                        disallowReason = "In Slot 3",
                         onSelectTier = { tier -> onSetTier(2, tier) }
                     )
                 }
 
-                // Slot 3: Fine Remaining Hours & Tier Selector
+                // Slot 3: Pipeline Slot 3 (Cannot be A, cannot match Slot 2 tier)
                 item {
                     FineTuningSlotBlock(
                         slot = houseStatus.slot3,
@@ -969,11 +1237,13 @@ private fun HouseDetailDialog(
                                 "House #$houseNum: Slot 3 Tier ${houseStatus.slot3.tier.code} Complete"
                             )
                         },
+                        disallowedTiers = setOf(PetTier.A, houseStatus.slot2.tier),
+                        disallowReason = "In Slot 2",
                         onSelectTier = { tier -> onSetTier(3, tier) }
                     )
                 }
 
-                // Mac NPC Replacement Timers: Remaining Hours Selectors
+                // Mac NPC Replacement Timers: Remaining Hours (Defaults to 360h)
                 item {
                     HorizontalDivider()
                     Spacer(modifier = Modifier.height(4.dp))
@@ -982,18 +1252,25 @@ private fun HouseDetailDialog(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "NPC Replacement Timers (Remaining Hours)",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = PenyaGold
-                        )
+                        Column {
+                            Text(
+                                text = "NPC Replacement Timers",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = PenyaGold
+                            )
+                            Text(
+                                text = "Default 360h (15-day max timer)",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         TextButton(
                             onClick = onRenewAllMacs,
                             modifier = Modifier.testTag("renew_all_macs_button")
                         ) {
                             Icon(Icons.Default.Autorenew, contentDescription = "Renew All", modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Full Renew")
+                            Text("Reset All 360h")
                         }
                     }
 
@@ -1013,14 +1290,18 @@ private fun HouseDetailDialog(
         confirmButton = {
             Button(
                 onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = PenyaGold, contentColor = ObsidianBackground),
                 modifier = Modifier.testTag("close_house_detail_button")
             ) {
-                Text("Done")
+                Text("Done", fontWeight = FontWeight.Bold)
             }
         }
     )
 }
 
+/**
+ * Direct numeric input block for fine-tuning a pet slot without sliders.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FineTuningSlotBlock(
@@ -1031,6 +1312,8 @@ private fun FineTuningSlotBlock(
     onSetRemainingHours: (Double) -> Unit,
     onAddHours: (Double) -> Unit,
     onScheduleAlarm: () -> Unit,
+    disallowedTiers: Set<PetTier> = emptySet(),
+    disallowReason: String = "",
     onSelectTier: ((PetTier) -> Unit)? = null
 ) {
     var customRemainingInput by remember(slot.remainingHours) {
@@ -1062,10 +1345,10 @@ private fun FineTuningSlotBlock(
             )
         }
 
-        // Tier Rank Selector (for Slots 2 & 3)
+        // Tier Rank Selector (for Slots 2 & 3) - Prevents 2 pets of same class
         if (onSelectTier != null) {
             Text(
-                text = "Pet Rank (Stage duration):",
+                text = "Pet Rank (Cannot duplicate pets in same house):",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1073,43 +1356,30 @@ private fun FineTuningSlotBlock(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                PetTier.entries.forEach { tier ->
+                listOf(PetTier.B, PetTier.C, PetTier.D, PetTier.E, PetTier.F).forEach { tier ->
+                    val isDisallowed = disallowedTiers.contains(tier)
                     FilterChip(
                         selected = slot.tier == tier,
+                        enabled = !isDisallowed,
                         onClick = { onSelectTier(tier) },
-                        label = { Text("${tier.code} (${tier.stageDurationHours.toInt()}h)") }
+                        label = {
+                            if (isDisallowed) {
+                                Text("${tier.code} ($disallowReason)")
+                            } else {
+                                Text("${tier.code} (${tier.stageDurationHours.toInt()}h)")
+                            }
+                        }
                     )
                 }
             }
         }
 
-        // Fine Remaining Hours Control (Slider + Number Field)
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Remaining Hours until Rank Up:",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = FCoinCyan
-                )
-                Text(
-                    text = "${String.format(Locale.US, "%.1f", slot.remainingHours)} / ${slot.requiredHours.toInt()}h",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White
-                )
-            }
-
-            Slider(
-                value = slot.remainingHours.toFloat().coerceIn(0f, slot.requiredHours.toFloat().coerceAtLeast(1f)),
-                onValueChange = { onSetRemainingHours(it.toDouble()) },
-                valueRange = 0f..slot.requiredHours.toFloat().coerceAtLeast(1f),
-                colors = SliderDefaults.colors(
-                    thumbColor = PenyaGold,
-                    activeTrackColor = PenyaGold
-                )
+        // Direct Numeric Input Box (No Slider!)
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                text = "Remaining Hours until Rank Up (Stage: ${slot.requiredHours.toInt()}h):",
+                style = MaterialTheme.typography.labelSmall,
+                color = FCoinCyan
             )
 
             Row(
@@ -1120,7 +1390,7 @@ private fun FineTuningSlotBlock(
                 OutlinedTextField(
                     value = customRemainingInput,
                     onValueChange = { customRemainingInput = it.filter { ch -> ch.isDigit() || ch == '.' } },
-                    label = { Text("Exact Hours Left") },
+                    label = { Text("Hours Remaining") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.weight(1f)
@@ -1130,11 +1400,58 @@ private fun FineTuningSlotBlock(
                         val parsed = customRemainingInput.toDoubleOrNull() ?: slot.remainingHours
                         onSetRemainingHours(parsed)
                     },
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                     Icon(Icons.Default.Check, contentDescription = "Set", modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("Apply")
+                }
+            }
+
+            // Quick Preset Buttons
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        customRemainingInput = String.format(Locale.US, "%.1f", slot.requiredHours)
+                        onSetRemainingHours(slot.requiredHours)
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Text("Full (${slot.requiredHours.toInt()}h)", style = MaterialTheme.typography.labelSmall)
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        val half = slot.requiredHours / 2.0
+                        customRemainingInput = String.format(Locale.US, "%.1f", half)
+                        onSetRemainingHours(half)
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Text("50%", style = MaterialTheme.typography.labelSmall)
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        customRemainingInput = "10.0"
+                        onSetRemainingHours(10.0)
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Text("10h Left", style = MaterialTheme.typography.labelSmall)
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        customRemainingInput = "0.0"
+                        onSetRemainingHours(0.0)
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Text("0h (Ready)", style = MaterialTheme.typography.labelSmall)
                 }
             }
         }
@@ -1174,6 +1491,10 @@ private fun FineTuningSlotBlock(
     }
 }
 
+/**
+ * Direct numeric input for Mac NPC remaining hours without slider.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FineTuningMacItem(
     mac: MacGradeTimerStatus,
@@ -1181,9 +1502,8 @@ private fun FineTuningMacItem(
     onSetRemainingHours: (Double) -> Unit,
     onRenew: () -> Unit
 ) {
-    var isEditing by remember { mutableStateOf(false) }
-    var textInput by remember(mac.hoursRemaining) {
-        mutableStateOf(mac.hoursRemaining.toInt().toString())
+    var hoursInputText by remember(mac.hoursRemaining) {
+        mutableStateOf(String.format(Locale.US, "%.1f", mac.hoursRemaining))
     }
 
     Column(
@@ -1191,7 +1511,7 @@ private fun FineTuningMacItem(
             .fillMaxWidth()
             .background(ObsidianElevated, RoundedCornerShape(10.dp))
             .padding(10.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1211,42 +1531,443 @@ private fun FineTuningMacItem(
             )
         }
 
-        Slider(
-            value = mac.hoursRemaining.toFloat().coerceIn(0f, maxHours.toFloat()),
-            onValueChange = { onSetRemainingHours(it.toDouble()) },
-            valueRange = 0f..maxHours.toFloat(),
-            colors = SliderDefaults.colors(
-                thumbColor = FCoinCyan,
-                activeTrackColor = FCoinCyan
-            )
-        )
-
+        // Direct Numeric Input Box (No Slider!)
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                OutlinedButton(
-                    onClick = { onSetRemainingHours(24.0) },
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                ) {
-                    Text("24h Left", style = MaterialTheme.typography.labelSmall)
-                }
-                OutlinedButton(
-                    onClick = { onSetRemainingHours(120.0) },
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                ) {
-                    Text("5 Days", style = MaterialTheme.typography.labelSmall)
-                }
-            }
-
-            TextButton(
-                onClick = onRenew,
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+            OutlinedTextField(
+                value = hoursInputText,
+                onValueChange = { hoursInputText = it.filter { ch -> ch.isDigit() || ch == '.' } },
+                label = { Text("Remaining Hours (0 - 360)") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier.weight(1f)
+            )
+            Button(
+                onClick = {
+                    val parsed = hoursInputText.toDoubleOrNull() ?: mac.hoursRemaining
+                    onSetRemainingHours(parsed.coerceIn(0.0, maxHours))
+                },
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
             ) {
-                Text("Reset 360h")
+                Icon(Icons.Default.Check, contentDescription = "Apply", modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Apply")
             }
         }
+
+        // Quick Preset Buttons
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            OutlinedButton(
+                onClick = {
+                    hoursInputText = "360.0"
+                    onRenew()
+                },
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+            ) {
+                Text("360h (Full)", style = MaterialTheme.typography.labelSmall)
+            }
+            OutlinedButton(
+                onClick = {
+                    hoursInputText = "180.0"
+                    onSetRemainingHours(180.0)
+                },
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+            ) {
+                Text("180h", style = MaterialTheme.typography.labelSmall)
+            }
+            OutlinedButton(
+                onClick = {
+                    hoursInputText = "72.0"
+                    onSetRemainingHours(72.0)
+                },
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+            ) {
+                Text("72h", style = MaterialTheme.typography.labelSmall)
+            }
+            OutlinedButton(
+                onClick = {
+                    hoursInputText = "24.0"
+                    onSetRemainingHours(24.0)
+                },
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+            ) {
+                Text("24h Left", style = MaterialTheme.typography.labelSmall)
+            }
+            OutlinedButton(
+                onClick = {
+                    hoursInputText = "0.0"
+                    onSetRemainingHours(0.0)
+                },
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+            ) {
+                Text("0h (Expired)", style = MaterialTheme.typography.labelSmall)
+            }
+        }
+    }
+}
+
+/**
+ * Dialog to configure a batch of selected houses at once.
+ * Includes explicit confirmation before applying.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun BatchHouseSetupDialog(
+    selectedHouseNumbers: Set<Int>,
+    macMaxHours: Double,
+    onDismiss: () -> Unit,
+    onApply: (
+        slot1RemainingHours: Double?,
+        slot1Running: Boolean?,
+        slot2Tier: PetTier?,
+        slot2RemainingHours: Double?,
+        slot2Running: Boolean?,
+        slot3Tier: PetTier?,
+        slot3RemainingHours: Double?,
+        slot3Running: Boolean?,
+        macRemainingHoursAll: Double?
+    ) -> Unit
+) {
+    // Configurable fields
+    var updateSlot1 by remember { mutableStateOf(true) }
+    var slot1Running by remember { mutableStateOf(true) }
+    var slot1RemainingText by remember { mutableStateOf("250.0") }
+
+    var updateSlot2 by remember { mutableStateOf(true) }
+    var slot2Tier by remember { mutableStateOf(PetTier.B) }
+    var slot2Running by remember { mutableStateOf(true) }
+    var slot2RemainingText by remember { mutableStateOf("75.0") }
+
+    var updateSlot3 by remember { mutableStateOf(true) }
+    var slot3Tier by remember { mutableStateOf(PetTier.C) }
+    var slot3Running by remember { mutableStateOf(true) }
+    var slot3RemainingText by remember { mutableStateOf("50.0") }
+
+    var updateMacs by remember { mutableStateOf(true) }
+    var macRemainingText by remember { mutableStateOf("360.0") }
+
+    var showConfirmApplyDialog by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text(
+                    text = "Batch Configure ${selectedHouseNumbers.size} Houses",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = Color.White
+                )
+                Text(
+                    text = "Houses: ${selectedHouseNumbers.sorted().take(12).joinToString(", ", prefix = "#")}${if (selectedHouseNumbers.size > 12) "..." else ""}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = PenyaGold
+                )
+            }
+        },
+        text = {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // Slot 1: S-Tier Bake (250h)
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(ObsidianElevated, RoundedCornerShape(12.dp))
+                            .padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(
+                                    checked = updateSlot1,
+                                    onCheckedChange = { updateSlot1 = it },
+                                    colors = CheckboxDefaults.colors(checkedColor = PenyaGold)
+                                )
+                                Text("Slot 1: S-Tier Bake (Grade A)", color = Color.White, fontWeight = FontWeight.Bold)
+                            }
+
+                            if (updateSlot1) {
+                                OutlinedButton(
+                                    onClick = { slot1Running = !slot1Running },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                ) {
+                                    Text(if (slot1Running) "Running" else "Paused", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+
+                        if (updateSlot1) {
+                            OutlinedTextField(
+                                value = slot1RemainingText,
+                                onValueChange = { slot1RemainingText = it.filter { ch -> ch.isDigit() || ch == '.' } },
+                                label = { Text("Remaining Hours (Default 250h)") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                OutlinedButton(onClick = { slot1RemainingText = "250.0" }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)) {
+                                    Text("250h (Full)", style = MaterialTheme.typography.labelSmall)
+                                }
+                                OutlinedButton(onClick = { slot1RemainingText = "125.0" }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)) {
+                                    Text("125h (Half)", style = MaterialTheme.typography.labelSmall)
+                                }
+                                OutlinedButton(onClick = { slot1RemainingText = "0.0" }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)) {
+                                    Text("0h (Ready)", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Slot 2: Defaults to B, cannot duplicate Slot 3 or A
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(ObsidianElevated, RoundedCornerShape(12.dp))
+                            .padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(
+                                    checked = updateSlot2,
+                                    onCheckedChange = { updateSlot2 = it },
+                                    colors = CheckboxDefaults.colors(checkedColor = FCoinCyan)
+                                )
+                                Text("Slot 2: Pipeline Pet", color = Color.White, fontWeight = FontWeight.Bold)
+                            }
+
+                            if (updateSlot2) {
+                                OutlinedButton(
+                                    onClick = { slot2Running = !slot2Running },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                ) {
+                                    Text(if (slot2Running) "Running" else "Paused", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+
+                        if (updateSlot2) {
+                            Text("Select Tier (Default B, cannot match Slot 3):", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf(PetTier.B, PetTier.C, PetTier.D, PetTier.E, PetTier.F).forEach { tier ->
+                                    val isDuplicate = tier == slot3Tier
+                                    FilterChip(
+                                        selected = slot2Tier == tier,
+                                        enabled = !isDuplicate,
+                                        onClick = {
+                                            slot2Tier = tier
+                                            slot2RemainingText = tier.stageDurationHours.toInt().toString()
+                                        },
+                                        label = { Text(if (isDuplicate) "${tier.code} (in S3)" else "${tier.code} (${tier.stageDurationHours.toInt()}h)") }
+                                    )
+                                }
+                            }
+
+                            OutlinedTextField(
+                                value = slot2RemainingText,
+                                onValueChange = { slot2RemainingText = it.filter { ch -> ch.isDigit() || ch == '.' } },
+                                label = { Text("Remaining Hours (Stage: ${slot2Tier.stageDurationHours.toInt()}h)") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
+
+                // Slot 3: Defaults to C, cannot duplicate Slot 2 or A
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(ObsidianElevated, RoundedCornerShape(12.dp))
+                            .padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(
+                                    checked = updateSlot3,
+                                    onCheckedChange = { updateSlot3 = it },
+                                    colors = CheckboxDefaults.colors(checkedColor = EmeraldProfit)
+                                )
+                                Text("Slot 3: Pipeline Pet", color = Color.White, fontWeight = FontWeight.Bold)
+                            }
+
+                            if (updateSlot3) {
+                                OutlinedButton(
+                                    onClick = { slot3Running = !slot3Running },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                ) {
+                                    Text(if (slot3Running) "Running" else "Paused", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+
+                        if (updateSlot3) {
+                            Text("Select Tier (Default C, cannot match Slot 2):", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf(PetTier.B, PetTier.C, PetTier.D, PetTier.E, PetTier.F).forEach { tier ->
+                                    val isDuplicate = tier == slot2Tier
+                                    FilterChip(
+                                        selected = slot3Tier == tier,
+                                        enabled = !isDuplicate,
+                                        onClick = {
+                                            slot3Tier = tier
+                                            slot3RemainingText = tier.stageDurationHours.toInt().toString()
+                                        },
+                                        label = { Text(if (isDuplicate) "${tier.code} (in S2)" else "${tier.code} (${tier.stageDurationHours.toInt()}h)") }
+                                    )
+                                }
+                            }
+
+                            OutlinedTextField(
+                                value = slot3RemainingText,
+                                onValueChange = { slot3RemainingText = it.filter { ch -> ch.isDigit() || ch == '.' } },
+                                label = { Text("Remaining Hours (Stage: ${slot3Tier.stageDurationHours.toInt()}h)") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
+
+                // Mac NPC Replacement Timers (Defaults to 360h)
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(ObsidianElevated, RoundedCornerShape(12.dp))
+                            .padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = updateMacs,
+                                onCheckedChange = { updateMacs = it },
+                                colors = CheckboxDefaults.colors(checkedColor = PenyaGold)
+                            )
+                            Column {
+                                Text("Mac NPC Replacement Timers", color = Color.White, fontWeight = FontWeight.Bold)
+                                Text("Default 360h (15-day full timer)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+
+                        if (updateMacs) {
+                            OutlinedTextField(
+                                value = macRemainingText,
+                                onValueChange = { macRemainingText = it.filter { ch -> ch.isDigit() || ch == '.' } },
+                                label = { Text("Remaining Hours across all Mac NPCs (0-360)") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                OutlinedButton(onClick = { macRemainingText = "360.0" }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)) {
+                                    Text("360h (Full)", style = MaterialTheme.typography.labelSmall)
+                                }
+                                OutlinedButton(onClick = { macRemainingText = "180.0" }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)) {
+                                    Text("180h", style = MaterialTheme.typography.labelSmall)
+                                }
+                                OutlinedButton(onClick = { macRemainingText = "24.0" }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)) {
+                                    Text("24h", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { showConfirmApplyDialog = true },
+                colors = ButtonDefaults.buttonColors(containerColor = PenyaGold, contentColor = ObsidianBackground),
+                modifier = Modifier.testTag("apply_batch_setup_button")
+            ) {
+                Text("Apply to ${selectedHouseNumbers.size} Houses", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+
+    // Explicit Confirmation Modal before batch applying
+    if (showConfirmApplyDialog) {
+        AlertDialog(
+            onDismissRequest = { showConfirmApplyDialog = false },
+            containerColor = ObsidianCard,
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.WarningAmber, contentDescription = null, tint = PenyaGold)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Confirm Batch Setup", color = Color.White)
+                }
+            },
+            text = {
+                Text(
+                    text = "Are you sure you want to apply these settings across all ${selectedHouseNumbers.size} selected houses? This will update their pet tiers, remaining hours, and NPC replacement timers.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showConfirmApplyDialog = false
+                        val s1Hours = if (updateSlot1) slot1RemainingText.toDoubleOrNull() ?: 250.0 else null
+                        val s1Run = if (updateSlot1) slot1Running else null
+
+                        val s2T = if (updateSlot2) slot2Tier else null
+                        val s2Hours = if (updateSlot2) slot2RemainingText.toDoubleOrNull() ?: slot2Tier.stageDurationHours else null
+                        val s2Run = if (updateSlot2) slot2Running else null
+
+                        val s3T = if (updateSlot3) slot3Tier else null
+                        val s3Hours = if (updateSlot3) slot3RemainingText.toDoubleOrNull() ?: slot3Tier.stageDurationHours else null
+                        val s3Run = if (updateSlot3) slot3Running else null
+
+                        val macHours = if (updateMacs) macRemainingText.toDoubleOrNull()?.coerceIn(0.0, macMaxHours) ?: 360.0 else null
+
+                        onApply(s1Hours, s1Run, s2T, s2Hours, s2Run, s3T, s3Hours, s3Run, macHours)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = PenyaGold, contentColor = ObsidianBackground),
+                    modifier = Modifier.testTag("confirm_apply_batch_dialog_button")
+                ) {
+                    Text("Confirm & Apply", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirmApplyDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }

@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -34,6 +35,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -49,6 +51,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.data.CalculationEngine
 import com.example.ui.PetEmpireUiState
+import com.example.ui.theme.CrimsonBurnAlert
 import com.example.ui.theme.EmeraldProfit
 import com.example.ui.theme.FCoinCyan
 import com.example.ui.theme.ObsidianBackground
@@ -91,29 +94,21 @@ fun EconomySettingsScreen(
     var macMaxHoursText by remember(s.macMaxActiveHours) { mutableStateOf(s.macMaxActiveHours.toInt().toString()) }
     var accumulatedProfitsText by remember(s.accumulatedProfitsPenya) { mutableStateOf(s.accumulatedProfitsPenya.toString()) }
 
-    fun pushUpdate(
-        housesOverride: Int = targetHouses,
-        sTierOverride: String = sTierPriceText,
-        aTierOverride: String = aTierPriceText,
-        fCoinOverride: String = fCoinRateText,
-        usdOverride: String = usdRateText,
-        deedOverride: String = houseDeedText,
-        fPetOverride: String = baseFPetText,
-        macFCoinsOverride: String = macFCoinsText,
-        macHoursOverride: String = macMaxHoursText,
-        profitsOverride: String = accumulatedProfitsText
-    ) {
+    var showConfirmSaveDialog by remember { mutableStateOf(false) }
+    var showConfirmResetDialog by remember { mutableStateOf(false) }
+
+    fun commitSettingsUpdate() {
         onSaveSettings(
-            housesOverride.coerceIn(1, 50),
-            sTierOverride.toLongOrNull() ?: s.sTierSellPrice,
-            aTierOverride.toLongOrNull() ?: s.aTierSellPrice,
-            fCoinOverride.toLongOrNull() ?: s.fCoinExchangeRatePer1000,
-            usdOverride.toDoubleOrNull() ?: s.penyaToUsdPer200M,
-            deedOverride.toLongOrNull() ?: s.houseDeedCost,
-            fPetOverride.toLongOrNull() ?: s.baseFPetCost,
-            macFCoinsOverride.toIntOrNull() ?: s.macCostFCoins,
-            macHoursOverride.toDoubleOrNull() ?: s.macMaxActiveHours,
-            profitsOverride.toLongOrNull() ?: s.accumulatedProfitsPenya
+            targetHouses.coerceIn(1, 50),
+            sTierPriceText.toLongOrNull() ?: s.sTierSellPrice,
+            aTierPriceText.toLongOrNull() ?: s.aTierSellPrice,
+            fCoinRateText.toLongOrNull() ?: s.fCoinExchangeRatePer1000,
+            usdRateText.toDoubleOrNull() ?: s.penyaToUsdPer200M,
+            houseDeedText.toLongOrNull() ?: s.houseDeedCost,
+            baseFPetText.toLongOrNull() ?: s.baseFPetCost,
+            macFCoinsText.toIntOrNull() ?: s.macCostFCoins,
+            macMaxHoursText.toDoubleOrNull() ?: s.macMaxActiveHours,
+            accumulatedProfitsText.toLongOrNull() ?: s.accumulatedProfitsPenya
         )
     }
 
@@ -207,12 +202,12 @@ fun EconomySettingsScreen(
                         horizontalArrangement = Arrangement.Start
                     ) {
                         OutlinedButton(
-                            onClick = onResetDefaults,
+                            onClick = { showConfirmResetDialog = true },
                             modifier = Modifier.testTag("reset_default_economy_button")
                         ) {
                             Icon(Icons.Default.Restore, contentDescription = "Reset Defaults", modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Reset Server Defaults (1k fC = 500M)")
+                            Text("Reset Server Defaults (S: 220M, A: 120M)")
                         }
                     }
                 }
@@ -256,7 +251,6 @@ fun EconomySettingsScreen(
                         value = targetHouses.toFloat(),
                         onValueChange = {
                             targetHouses = it.roundToInt().coerceIn(1, 50)
-                            pushUpdate(housesOverride = targetHouses)
                         },
                         valueRange = 1f..50f,
                         steps = 48,
@@ -280,9 +274,8 @@ fun EconomySettingsScreen(
                         value = sTierPriceText,
                         onValueChange = {
                             sTierPriceText = it.filter { c -> c.isDigit() }
-                            pushUpdate(sTierOverride = sTierPriceText)
                         },
-                        label = { Text("S-Tier Pet Sell Price (Penya • Default: 120,000,000)") },
+                        label = { Text("S-Tier Pet Sell Price (Penya • Default: 220,000,000)") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier
@@ -294,9 +287,8 @@ fun EconomySettingsScreen(
                         value = aTierPriceText,
                         onValueChange = {
                             aTierPriceText = it.filter { c -> c.isDigit() }
-                            pushUpdate(aTierOverride = aTierPriceText)
                         },
-                        label = { Text("A-Tier Pet Sell Price (Penya • Default: 65,000,000)") },
+                        label = { Text("A-Tier Pet Sell Price (Penya • Default: 120,000,000)") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier
@@ -308,7 +300,6 @@ fun EconomySettingsScreen(
                         value = fCoinRateText,
                         onValueChange = {
                             fCoinRateText = it.filter { c -> c.isDigit() }
-                            pushUpdate(fCoinOverride = fCoinRateText)
                         },
                         label = { Text("fCoin Rate: Penya per 1,000 fCoins (Default: 500,000,000)") },
                         supportingText = {
@@ -325,7 +316,6 @@ fun EconomySettingsScreen(
                         value = usdRateText,
                         onValueChange = {
                             usdRateText = it.filter { c -> c.isDigit() || c == '.' }
-                            pushUpdate(usdOverride = usdRateText)
                         },
                         label = { Text("Penya-to-USD Rate: USD per 200M Penya (Default: 3.09)") },
                         singleLine = true,
@@ -348,7 +338,6 @@ fun EconomySettingsScreen(
                         value = houseDeedText,
                         onValueChange = {
                             houseDeedText = it.filter { c -> c.isDigit() }
-                            pushUpdate(deedOverride = houseDeedText)
                         },
                         label = { Text("House Deed Cost (Penya • Default: 100,000,000)") },
                         singleLine = true,
@@ -362,7 +351,6 @@ fun EconomySettingsScreen(
                         value = baseFPetText,
                         onValueChange = {
                             baseFPetText = it.filter { c -> c.isDigit() }
-                            pushUpdate(fPetOverride = baseFPetText)
                         },
                         label = { Text("Base F-Tier Pet Cost (Penya • Default: 2,000,000)") },
                         singleLine = true,
@@ -380,7 +368,6 @@ fun EconomySettingsScreen(
                             value = macFCoinsText,
                             onValueChange = {
                                 macFCoinsText = it.filter { c -> c.isDigit() }
-                                pushUpdate(macFCoinsOverride = macFCoinsText)
                             },
                             label = { Text("Mac Cost (fCoins • Def: 140)") },
                             singleLine = true,
@@ -394,7 +381,6 @@ fun EconomySettingsScreen(
                             value = macMaxHoursText,
                             onValueChange = {
                                 macMaxHoursText = it.filter { c -> c.isDigit() }
-                                pushUpdate(macHoursOverride = macMaxHoursText)
                             },
                             label = { Text("Mac Max Hours (Def: 360h)") },
                             singleLine = true,
@@ -409,7 +395,6 @@ fun EconomySettingsScreen(
                         value = accumulatedProfitsText,
                         onValueChange = {
                             accumulatedProfitsText = it.filter { c -> c.isDigit() }
-                            pushUpdate(profitsOverride = accumulatedProfitsText)
                         },
                         label = { Text("Accumulated Cycle Profits (Penya Treasury)") },
                         singleLine = true,
@@ -420,7 +405,7 @@ fun EconomySettingsScreen(
                     )
 
                     Button(
-                        onClick = { pushUpdate() },
+                        onClick = { showConfirmSaveDialog = true },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = PenyaGold,
                             contentColor = ObsidianBackground
@@ -431,10 +416,82 @@ fun EconomySettingsScreen(
                     ) {
                         Icon(Icons.Default.Check, contentDescription = "Apply")
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Recalculate All 40-House Projections", fontWeight = FontWeight.Bold)
+                        Text("Save & Apply Settings Changes", fontWeight = FontWeight.Bold)
                     }
                 }
             }
         }
+    }
+
+    if (showConfirmSaveDialog) {
+        val parsedS = sTierPriceText.toLongOrNull() ?: s.sTierSellPrice
+        val parsedA = aTierPriceText.toLongOrNull() ?: s.aTierSellPrice
+        val parsedFCoin = fCoinRateText.toLongOrNull() ?: s.fCoinExchangeRatePer1000
+
+        AlertDialog(
+            onDismissRequest = { showConfirmSaveDialog = false },
+            title = {
+                Text(text = "Confirm Economy Changes", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Apply these new master rates to all calculations and active houses?")
+                    Text("• S-Tier Sell Price: ${CalculationEngine.formatPenyaExact(parsedS)}")
+                    Text("• A-Tier Sell Price: ${CalculationEngine.formatPenyaExact(parsedA)}")
+                    Text("• fCoin Exchange: ${CalculationEngine.formatPenyaExact(parsedFCoin)} / 1,000 fCoins")
+                    Text("• Empire Scale: $targetHouses Houses")
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showConfirmSaveDialog = false
+                        commitSettingsUpdate()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = PenyaGold,
+                        contentColor = ObsidianBackground
+                    )
+                ) {
+                    Text("Confirm & Apply", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirmSaveDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (showConfirmResetDialog) {
+        AlertDialog(
+            onDismissRequest = { showConfirmResetDialog = false },
+            title = {
+                Text(text = "Reset to Baseline Defaults?", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Text("This will restore default server economy rates (S-Tier: 220,000,000, A-Tier: 120,000,000, 1k fC = 500M Penya, 40 Houses). Are you sure?")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showConfirmResetDialog = false
+                        onResetDefaults()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = CrimsonBurnAlert,
+                        contentColor = Color.White
+                    )
+                ) {
+                    Text("Reset Defaults", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirmResetDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
