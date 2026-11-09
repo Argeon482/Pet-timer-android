@@ -28,7 +28,8 @@ data class MacGradeTimerStatus(
     val hoursRemaining: Double,
     val usageFraction: Float,
     val isExpiringSoon: Boolean, // < 30h remaining
-    val isExpired: Boolean
+    val isExpired: Boolean,
+    val isCurrentlyTraining: Boolean = false
 )
 
 data class HouseComputedStatus(
@@ -222,14 +223,57 @@ object CalculationEngine {
             pipelineOverallProgress = (s3Cumulative / PetTier.TOTAL_F_TO_A_RAMP_HOURS).toFloat().coerceIn(0f, 1f)
         )
 
+        fun sessionHours(running: Boolean, startedMs: Long?): Double {
+            if (!running || startedMs == null) return 0.0
+            return ((nowEpochMs - startedMs).coerceAtLeast(0L)).toDouble() / 3_600_000.0
+        }
+
+        val s1Session = sessionHours(house.slot1Running, house.slot1LastStartedEpochMs)
+        val s2Session = sessionHours(house.slot2Running, house.slot2LastStartedEpochMs)
+        val s3Session = sessionHours(house.slot3Running, house.slot3LastStartedEpochMs)
+
+        // Mac NPC Replacement Timers count down as that particular ranked pet is being trained.
+        // When active/training it counts down; when inactive it doesn't.
+        // It only counts as not training when stopped by the user, NOT when the pet finishes training.
+        val isFTraining = (s2Tier == PetTier.F && house.slot2Running) || (s3Tier == PetTier.F && house.slot3Running)
+        val isETraining = (s2Tier == PetTier.E && house.slot2Running) || (s3Tier == PetTier.E && house.slot3Running)
+        val isDTraining = (s2Tier == PetTier.D && house.slot2Running) || (s3Tier == PetTier.D && house.slot3Running)
+        val isCTraining = (s2Tier == PetTier.C && house.slot2Running) || (s3Tier == PetTier.C && house.slot3Running)
+        val isBTraining = (s2Tier == PetTier.B && house.slot2Running) || (s3Tier == PetTier.B && house.slot3Running)
+        val isATraining = house.slot1Running || (s2Tier == PetTier.A && house.slot2Running) || (s3Tier == PetTier.A && house.slot3Running)
+
+        val liveMacFUsed = house.macFHoursUsed +
+            (if (s2Tier == PetTier.F) s2Session else 0.0) +
+            (if (s3Tier == PetTier.F) s3Session else 0.0)
+
+        val liveMacEUsed = house.macEHoursUsed +
+            (if (s2Tier == PetTier.E) s2Session else 0.0) +
+            (if (s3Tier == PetTier.E) s3Session else 0.0)
+
+        val liveMacDUsed = house.macDHoursUsed +
+            (if (s2Tier == PetTier.D) s2Session else 0.0) +
+            (if (s3Tier == PetTier.D) s3Session else 0.0)
+
+        val liveMacCUsed = house.macCHoursUsed +
+            (if (s2Tier == PetTier.C) s2Session else 0.0) +
+            (if (s3Tier == PetTier.C) s3Session else 0.0)
+
+        val liveMacBUsed = house.macBHoursUsed +
+            (if (s2Tier == PetTier.B) s2Session else 0.0) +
+            (if (s3Tier == PetTier.B) s3Session else 0.0)
+
+        val liveMacAUsed = house.macAHoursUsed + s1Session +
+            (if (s2Tier == PetTier.A) s2Session else 0.0) +
+            (if (s3Tier == PetTier.A) s3Session else 0.0)
+
         val macGrades = listOf(
-            PetTier.F to house.macFHoursUsed,
-            PetTier.E to house.macEHoursUsed,
-            PetTier.D to house.macDHoursUsed,
-            PetTier.C to house.macCHoursUsed,
-            PetTier.B to house.macBHoursUsed,
-            PetTier.A to (house.macAHoursUsed + s1Overflow)
-        ).map { (tier, used) ->
+            Triple(PetTier.F, liveMacFUsed, isFTraining),
+            Triple(PetTier.E, liveMacEUsed, isETraining),
+            Triple(PetTier.D, liveMacDUsed, isDTraining),
+            Triple(PetTier.C, liveMacCUsed, isCTraining),
+            Triple(PetTier.B, liveMacBUsed, isBTraining),
+            Triple(PetTier.A, liveMacAUsed, isATraining)
+        ).map { (tier, used, isTraining) ->
             val clampedUsed = used.coerceAtLeast(0.0)
             val remaining = max(0.0, maxMacHours - clampedUsed)
             MacGradeTimerStatus(
@@ -239,7 +283,8 @@ object CalculationEngine {
                 hoursRemaining = remaining,
                 usageFraction = (clampedUsed / maxMacHours).toFloat().coerceIn(0f, 1f),
                 isExpiringSoon = remaining in 0.01..30.0,
-                isExpired = remaining <= 0.0
+                isExpired = remaining <= 0.0,
+                isCurrentlyTraining = isTraining
             )
         }
 

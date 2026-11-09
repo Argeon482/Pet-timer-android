@@ -8,6 +8,7 @@ import com.example.data.EmpireFinancialSummary
 import com.example.data.ExpansionPlanEvaluation
 import com.example.data.GlobalSettingsEntity
 import com.example.data.HouseComputedStatus
+import com.example.data.HouseEntity
 import com.example.data.PetEmpireRepository
 import com.example.data.PetTier
 import com.example.util.AlarmActionItem
@@ -227,6 +228,18 @@ class PetEmpireViewModel(
     }
 
     // --- Manual House & Slot Timer Controls ---
+    private fun HouseEntity.addMacHours(grade: PetTier, hours: Double): HouseEntity {
+        if (hours <= 0.0) return this
+        return when (grade) {
+            PetTier.F -> copy(macFHoursUsed = macFHoursUsed + hours)
+            PetTier.E -> copy(macEHoursUsed = macEHoursUsed + hours)
+            PetTier.D -> copy(macDHoursUsed = macDHoursUsed + hours)
+            PetTier.C -> copy(macCHoursUsed = macCHoursUsed + hours)
+            PetTier.B -> copy(macBHoursUsed = macBHoursUsed + hours)
+            PetTier.A -> copy(macAHoursUsed = macAHoursUsed + hours)
+        }
+    }
+
     fun toggleSlotRunning(houseNumber: Int, slotIndex: Int) {
         val nowMs = System.currentTimeMillis()
         nowTickerFlow.value = nowMs
@@ -241,7 +254,8 @@ class PetEmpireViewModel(
                             house.copy(
                                 slot1Running = false,
                                 slot1AccumulatedHours = house.slot1AccumulatedHours + delta,
-                                slot1LastStartedEpochMs = null
+                                slot1LastStartedEpochMs = null,
+                                macAHoursUsed = house.macAHoursUsed + delta
                             )
                         } else {
                             house.copy(
@@ -251,15 +265,17 @@ class PetEmpireViewModel(
                         }
                     }
                     2 -> {
+                        val tier = PetTier.fromCode(house.slot2Tier)
                         if (house.slot2Running) {
                             val delta = house.slot2LastStartedEpochMs?.let {
                                 ((nowMs - it).coerceAtLeast(0L)) / 3_600_000.0
                             } ?: 0.0
-                            house.copy(
+                            val h = house.copy(
                                 slot2Running = false,
                                 slot2AccumulatedHours = house.slot2AccumulatedHours + delta,
                                 slot2LastStartedEpochMs = null
                             )
+                            h.addMacHours(tier, delta)
                         } else {
                             house.copy(
                                 slot2Running = true,
@@ -268,15 +284,17 @@ class PetEmpireViewModel(
                         }
                     }
                     3 -> {
+                        val tier = PetTier.fromCode(house.slot3Tier)
                         if (house.slot3Running) {
                             val delta = house.slot3LastStartedEpochMs?.let {
                                 ((nowMs - it).coerceAtLeast(0L)) / 3_600_000.0
                             } ?: 0.0
-                            house.copy(
+                            val h = house.copy(
                                 slot3Running = false,
                                 slot3AccumulatedHours = house.slot3AccumulatedHours + delta,
                                 slot3LastStartedEpochMs = null
                             )
+                            h.addMacHours(tier, delta)
                         } else {
                             house.copy(
                                 slot3Running = true,
@@ -296,21 +314,41 @@ class PetEmpireViewModel(
         viewModelScope.launch {
             repository.updateHouse(houseNumber) { house ->
                 when (slotIndex) {
-                    1 -> house.copy(
-                        slot1Running = false,
-                        slot1AccumulatedHours = 0.0,
-                        slot1LastStartedEpochMs = null
-                    )
-                    2 -> house.copy(
-                        slot2Running = false,
-                        slot2AccumulatedHours = 0.0,
-                        slot2LastStartedEpochMs = null
-                    )
-                    3 -> house.copy(
-                        slot3Running = false,
-                        slot3AccumulatedHours = 0.0,
-                        slot3LastStartedEpochMs = null
-                    )
+                    1 -> {
+                        val delta = if (house.slot1Running && house.slot1LastStartedEpochMs != null) {
+                            ((nowMs - house.slot1LastStartedEpochMs).coerceAtLeast(0L)) / 3_600_000.0
+                        } else 0.0
+                        house.copy(
+                            slot1Running = false,
+                            slot1AccumulatedHours = 0.0,
+                            slot1LastStartedEpochMs = null,
+                            macAHoursUsed = house.macAHoursUsed + delta
+                        )
+                    }
+                    2 -> {
+                        val delta = if (house.slot2Running && house.slot2LastStartedEpochMs != null) {
+                            ((nowMs - house.slot2LastStartedEpochMs).coerceAtLeast(0L)) / 3_600_000.0
+                        } else 0.0
+                        val tier = PetTier.fromCode(house.slot2Tier)
+                        val h = house.copy(
+                            slot2Running = false,
+                            slot2AccumulatedHours = 0.0,
+                            slot2LastStartedEpochMs = null
+                        )
+                        h.addMacHours(tier, delta)
+                    }
+                    3 -> {
+                        val delta = if (house.slot3Running && house.slot3LastStartedEpochMs != null) {
+                            ((nowMs - house.slot3LastStartedEpochMs).coerceAtLeast(0L)) / 3_600_000.0
+                        } else 0.0
+                        val tier = PetTier.fromCode(house.slot3Tier)
+                        val h = house.copy(
+                            slot3Running = false,
+                            slot3AccumulatedHours = 0.0,
+                            slot3LastStartedEpochMs = null
+                        )
+                        h.addMacHours(tier, delta)
+                    }
                     else -> house
                 }
             }
@@ -410,16 +448,27 @@ class PetEmpireViewModel(
         val maxHours = uiState.value.settings.macMaxActiveHours
         val remClamped = remainingHours.coerceIn(0.0, maxHours)
         val used = (maxHours - remClamped).coerceAtLeast(0.0)
+        val nowMs = System.currentTimeMillis()
+        nowTickerFlow.value = nowMs
         markTimerChanged("h${houseNumber}_mac_${grade.code}")
         viewModelScope.launch {
             repository.updateHouse(houseNumber) { house ->
+                val resetS1 = (grade == PetTier.A) && house.slot1Running
+                val resetS2 = (PetTier.fromCode(house.slot2Tier) == grade) && house.slot2Running
+                val resetS3 = (PetTier.fromCode(house.slot3Tier) == grade) && house.slot3Running
+
+                val h = house.copy(
+                    slot1LastStartedEpochMs = if (resetS1) nowMs else house.slot1LastStartedEpochMs,
+                    slot2LastStartedEpochMs = if (resetS2) nowMs else house.slot2LastStartedEpochMs,
+                    slot3LastStartedEpochMs = if (resetS3) nowMs else house.slot3LastStartedEpochMs
+                )
                 when (grade) {
-                    PetTier.F -> house.copy(macFHoursUsed = used)
-                    PetTier.E -> house.copy(macEHoursUsed = used)
-                    PetTier.D -> house.copy(macDHoursUsed = used)
-                    PetTier.C -> house.copy(macCHoursUsed = used)
-                    PetTier.B -> house.copy(macBHoursUsed = used)
-                    PetTier.A -> house.copy(macAHoursUsed = used)
+                    PetTier.F -> h.copy(macFHoursUsed = used)
+                    PetTier.E -> h.copy(macEHoursUsed = used)
+                    PetTier.D -> h.copy(macDHoursUsed = used)
+                    PetTier.C -> h.copy(macCHoursUsed = used)
+                    PetTier.B -> h.copy(macBHoursUsed = used)
+                    PetTier.A -> h.copy(macAHoursUsed = used)
                 }
             }
         }
@@ -438,7 +487,12 @@ class PetEmpireViewModel(
                         if (tier.code.equals(house.slot3Tier, ignoreCase = true)) {
                             house
                         } else {
-                            house.copy(
+                            val oldTier = PetTier.fromCode(house.slot2Tier)
+                            val delta = if (house.slot2Running && house.slot2LastStartedEpochMs != null) {
+                                ((nowMs - house.slot2LastStartedEpochMs).coerceAtLeast(0L)) / 3_600_000.0
+                            } else 0.0
+                            val h = house.addMacHours(oldTier, delta)
+                            h.copy(
                                 slot2Tier = tier.code,
                                 slot2AccumulatedHours = 0.0,
                                 slot2LastStartedEpochMs = if (house.slot2Running) nowMs else null
@@ -450,7 +504,12 @@ class PetEmpireViewModel(
                         if (tier.code.equals(house.slot2Tier, ignoreCase = true)) {
                             house
                         } else {
-                            house.copy(
+                            val oldTier = PetTier.fromCode(house.slot3Tier)
+                            val delta = if (house.slot3Running && house.slot3LastStartedEpochMs != null) {
+                                ((nowMs - house.slot3LastStartedEpochMs).coerceAtLeast(0L)) / 3_600_000.0
+                            } else 0.0
+                            val h = house.addMacHours(oldTier, delta)
+                            h.copy(
                                 slot3Tier = tier.code,
                                 slot3AccumulatedHours = 0.0,
                                 slot3LastStartedEpochMs = if (house.slot3Running) nowMs else null
@@ -573,24 +632,40 @@ class PetEmpireViewModel(
     }
 
     fun renewMacGradeTimer(houseNumber: Int, grade: PetTier) {
+        val nowMs = System.currentTimeMillis()
+        nowTickerFlow.value = nowMs
         viewModelScope.launch {
             repository.updateHouse(houseNumber) { house ->
+                val resetS1 = (grade == PetTier.A) && house.slot1Running
+                val resetS2 = (PetTier.fromCode(house.slot2Tier) == grade) && house.slot2Running
+                val resetS3 = (PetTier.fromCode(house.slot3Tier) == grade) && house.slot3Running
+
+                val h = house.copy(
+                    slot1LastStartedEpochMs = if (resetS1) nowMs else house.slot1LastStartedEpochMs,
+                    slot2LastStartedEpochMs = if (resetS2) nowMs else house.slot2LastStartedEpochMs,
+                    slot3LastStartedEpochMs = if (resetS3) nowMs else house.slot3LastStartedEpochMs
+                )
                 when (grade) {
-                    PetTier.F -> house.copy(macFHoursUsed = 0.0)
-                    PetTier.E -> house.copy(macEHoursUsed = 0.0)
-                    PetTier.D -> house.copy(macDHoursUsed = 0.0)
-                    PetTier.C -> house.copy(macCHoursUsed = 0.0)
-                    PetTier.B -> house.copy(macBHoursUsed = 0.0)
-                    PetTier.A -> house.copy(macAHoursUsed = 0.0)
+                    PetTier.F -> h.copy(macFHoursUsed = 0.0)
+                    PetTier.E -> h.copy(macEHoursUsed = 0.0)
+                    PetTier.D -> h.copy(macDHoursUsed = 0.0)
+                    PetTier.C -> h.copy(macCHoursUsed = 0.0)
+                    PetTier.B -> h.copy(macBHoursUsed = 0.0)
+                    PetTier.A -> h.copy(macAHoursUsed = 0.0)
                 }
             }
         }
     }
 
     fun renewAllMacTimersForHouse(houseNumber: Int) {
+        val nowMs = System.currentTimeMillis()
+        nowTickerFlow.value = nowMs
         viewModelScope.launch {
             repository.updateHouse(houseNumber) { house ->
                 house.copy(
+                    slot1LastStartedEpochMs = if (house.slot1Running) nowMs else null,
+                    slot2LastStartedEpochMs = if (house.slot2Running) nowMs else null,
+                    slot3LastStartedEpochMs = if (house.slot3Running) nowMs else null,
                     macFHoursUsed = 0.0,
                     macEHoursUsed = 0.0,
                     macDHoursUsed = 0.0,
@@ -613,17 +688,14 @@ class PetEmpireViewModel(
         nowTickerFlow.value = nowMs
         viewModelScope.launch {
             repository.updateAllHouses { house ->
-                // Move Slot 2 to Grade A (ready for bake/harvest)
-                // Move Slot 3 (e.g. C) to Grade B
-                // Start slot 2 with Grade A or fresh slot 3 with fresh F
                 house.copy(
                     slot1Running = true,
                     slot1LastStartedEpochMs = nowMs,
-                    slot2Tier = "A",
+                    slot2Tier = "B",
                     slot2Running = true,
                     slot2AccumulatedHours = 0.0,
                     slot2LastStartedEpochMs = nowMs,
-                    slot3Tier = "B",
+                    slot3Tier = "C",
                     slot3Running = true,
                     slot3AccumulatedHours = 0.0,
                     slot3LastStartedEpochMs = nowMs
@@ -717,29 +789,35 @@ class PetEmpireViewModel(
         viewModelScope.launch {
             repository.updateAllHouses { house ->
                 val status = CalculationEngine.computeHouseStatus(house, settings, nowMs)
-                house.copy(
-                    slot1Running = if (status.slot1.isFinished) false else house.slot1Running,
-                    slot1AccumulatedHours = if (status.slot1.isFinished) {
-                        status.slot1.requiredHours
-                    } else {
-                        status.slot1.elapsedHours
-                    },
-                    slot1LastStartedEpochMs = if (status.slot1.isFinished || !house.slot1Running) null else nowMs,
-                    slot2Running = if (status.slot2.isFinished) false else house.slot2Running,
-                    slot2AccumulatedHours = if (status.slot2.isFinished) {
-                        status.slot2.requiredHours
-                    } else {
-                        status.slot2.elapsedHours
-                    },
-                    slot2LastStartedEpochMs = if (status.slot2.isFinished || !house.slot2Running) null else nowMs,
-                    slot3Running = if (status.slot3.isFinished) false else house.slot3Running,
-                    slot3AccumulatedHours = if (status.slot3.isFinished) {
-                        status.slot3.requiredHours
-                    } else {
-                        status.slot3.elapsedHours
-                    },
-                    slot3LastStartedEpochMs = if (status.slot3.isFinished || !house.slot3Running) null else nowMs
-                )
+                var updated = house
+                if (status.slot1.isFinished && house.slot1Running) {
+                    val delta = house.slot1LastStartedEpochMs?.let { ((nowMs - it).coerceAtLeast(0L)) / 3_600_000.0 } ?: 0.0
+                    updated = updated.copy(
+                        slot1Running = false,
+                        slot1AccumulatedHours = status.slot1.requiredHours,
+                        slot1LastStartedEpochMs = null,
+                        macAHoursUsed = updated.macAHoursUsed + delta
+                    )
+                }
+                if (status.slot2.isFinished && house.slot2Running) {
+                    val delta = house.slot2LastStartedEpochMs?.let { ((nowMs - it).coerceAtLeast(0L)) / 3_600_000.0 } ?: 0.0
+                    val s2Tier = PetTier.fromCode(updated.slot2Tier)
+                    updated = updated.copy(
+                        slot2Running = false,
+                        slot2AccumulatedHours = status.slot2.requiredHours,
+                        slot2LastStartedEpochMs = null
+                    ).addMacHours(s2Tier, delta)
+                }
+                if (status.slot3.isFinished && house.slot3Running) {
+                    val delta = house.slot3LastStartedEpochMs?.let { ((nowMs - it).coerceAtLeast(0L)) / 3_600_000.0 } ?: 0.0
+                    val s3Tier = PetTier.fromCode(updated.slot3Tier)
+                    updated = updated.copy(
+                        slot3Running = false,
+                        slot3AccumulatedHours = status.slot3.requiredHours,
+                        slot3LastStartedEpochMs = null
+                    ).addMacHours(s3Tier, delta)
+                }
+                updated
             }
         }
     }
@@ -783,17 +861,42 @@ class PetEmpireViewModel(
         viewModelScope.launch {
             repository.updateAllHouses { house ->
                 val status = CalculationEngine.computeHouseStatus(house, settings, nowMs)
-                house.copy(
-                    slot1Running = running,
-                    slot1AccumulatedHours = status.slot1.elapsedHours,
-                    slot1LastStartedEpochMs = if (running) nowMs else null,
-                    slot2Running = running,
-                    slot2AccumulatedHours = status.slot2.elapsedHours,
-                    slot2LastStartedEpochMs = if (running) nowMs else null,
-                    slot3Running = running,
-                    slot3AccumulatedHours = status.slot3.elapsedHours,
-                    slot3LastStartedEpochMs = if (running) nowMs else null
-                )
+                if (!running) {
+                    val s1Delta = if (house.slot1Running && house.slot1LastStartedEpochMs != null) ((nowMs - house.slot1LastStartedEpochMs).coerceAtLeast(0L)) / 3_600_000.0 else 0.0
+                    val s2Delta = if (house.slot2Running && house.slot2LastStartedEpochMs != null) ((nowMs - house.slot2LastStartedEpochMs).coerceAtLeast(0L)) / 3_600_000.0 else 0.0
+                    val s3Delta = if (house.slot3Running && house.slot3LastStartedEpochMs != null) ((nowMs - house.slot3LastStartedEpochMs).coerceAtLeast(0L)) / 3_600_000.0 else 0.0
+
+                    val s2Tier = PetTier.fromCode(house.slot2Tier)
+                    val s3Tier = PetTier.fromCode(house.slot3Tier)
+
+                    var h = house.copy(
+                        slot1Running = false,
+                        slot1AccumulatedHours = status.slot1.elapsedHours,
+                        slot1LastStartedEpochMs = null,
+                        slot2Running = false,
+                        slot2AccumulatedHours = status.slot2.elapsedHours,
+                        slot2LastStartedEpochMs = null,
+                        slot3Running = false,
+                        slot3AccumulatedHours = status.slot3.elapsedHours,
+                        slot3LastStartedEpochMs = null
+                    )
+                    h = h.addMacHours(PetTier.A, s1Delta)
+                    h = h.addMacHours(s2Tier, s2Delta)
+                    h = h.addMacHours(s3Tier, s3Delta)
+                    h
+                } else {
+                    house.copy(
+                        slot1Running = true,
+                        slot1AccumulatedHours = status.slot1.elapsedHours,
+                        slot1LastStartedEpochMs = nowMs,
+                        slot2Running = true,
+                        slot2AccumulatedHours = status.slot2.elapsedHours,
+                        slot2LastStartedEpochMs = nowMs,
+                        slot3Running = true,
+                        slot3AccumulatedHours = status.slot3.elapsedHours,
+                        slot3LastStartedEpochMs = nowMs
+                    )
+                }
             }
         }
     }

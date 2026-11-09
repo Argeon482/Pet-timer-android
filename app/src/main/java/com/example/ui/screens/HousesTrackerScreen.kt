@@ -1097,6 +1097,7 @@ private fun MacMiniPill(
     val pillColor = when {
         mac.isExpired -> CrimsonBurnAlert
         mac.isExpiringSoon -> AmberWarning
+        mac.isCurrentlyTraining -> EmeraldProfit
         else -> FCoinCyan
     }
     Column(
@@ -1104,23 +1105,34 @@ private fun MacMiniPill(
             .background(ObsidianElevated, RoundedCornerShape(8.dp))
             .border(
                 width = 1.dp,
-                color = if (mac.isExpiringSoon || mac.isExpired) pillColor else Color.Transparent,
+                color = if (mac.isExpiringSoon || mac.isExpired) pillColor else if (mac.isCurrentlyTraining) EmeraldProfit.copy(alpha = 0.6f) else Color.Transparent,
                 shape = RoundedCornerShape(8.dp)
             )
             .padding(horizontal = 4.dp, vertical = 5.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "Mac ${mac.grade.code}",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White,
+                fontWeight = FontWeight.Bold
+            )
+            if (mac.isCurrentlyTraining) {
+                Spacer(modifier = Modifier.width(2.dp))
+                androidx.compose.foundation.layout.Box(
+                    modifier = Modifier
+                        .size(5.dp)
+                        .background(EmeraldProfit, RoundedCornerShape(50))
+                )
+            }
+        }
         Text(
-            text = "Mac ${mac.grade.code}",
+            text = String.format(Locale.US, "%.1fh", mac.hoursRemaining),
             style = MaterialTheme.typography.labelSmall,
-            color = Color.White,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            text = "${mac.hoursRemaining.toInt()}h",
-            style = MaterialTheme.typography.labelSmall,
-            color = pillColor
+            color = pillColor,
+            fontWeight = if (mac.isCurrentlyTraining) FontWeight.Bold else FontWeight.Normal
         )
         LinearProgressIndicator(
             progress = { mac.usageFraction },
@@ -1528,16 +1540,34 @@ private fun FineTuningMacItem(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "Mac Grade ${mac.grade.code} NPC Replacement",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+                if (mac.isCurrentlyTraining) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Surface(
+                        color = EmeraldProfit.copy(alpha = 0.2f),
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Text(
+                            text = "TRAINING",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = EmeraldProfit,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
+                }
+            }
             Text(
-                text = "Mac Grade ${mac.grade.code} NPC Replacement",
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.White,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = "${mac.hoursRemaining.toInt()}h / ${maxHours.toInt()}h left",
+                text = "${String.format(Locale.US, "%.1f", mac.hoursRemaining)}h / ${maxHours.toInt()}h left",
                 style = MaterialTheme.typography.labelSmall,
-                color = if (mac.isExpiringSoon) AmberWarning else FCoinCyan
+                color = if (mac.isExpired) CrimsonBurnAlert else if (mac.isExpiringSoon) AmberWarning else if (mac.isCurrentlyTraining) EmeraldProfit else FCoinCyan,
+                fontWeight = FontWeight.Bold
             )
         }
 

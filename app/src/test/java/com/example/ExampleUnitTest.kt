@@ -5,6 +5,7 @@ import com.example.data.GlobalSettingsEntity
 import com.example.data.HouseEntity
 import com.example.data.PetTier
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -57,6 +58,88 @@ class ExampleUnitTest {
         status.macTimers.forEach { mac ->
             assertEquals(360.0, mac.hoursRemaining, 0.001)
         }
+    }
+
+    @Test
+    fun macReplacementTimers_countDownWhenParticularRankIsTraining_andStayInactiveOtherwise() {
+        val settings = GlobalSettingsEntity()
+        val startMs = 1_000_000L
+        val tenHoursLaterMs = startMs + (10L * 3_600_000L) // 10 hours later
+
+        val house = HouseEntity(
+            houseNumber = 1,
+            // Slot 1: Training Grade A pet, currently running for 10h
+            slot1Running = true,
+            slot1AccumulatedHours = 0.0,
+            slot1LastStartedEpochMs = startMs,
+            // Slot 2: Grade B pet, currently running for 10h
+            slot2Tier = "B",
+            slot2Running = true,
+            slot2AccumulatedHours = 0.0,
+            slot2LastStartedEpochMs = startMs,
+            // Slot 3: Grade C pet, but PAUSED / INACTIVE
+            slot3Tier = "C",
+            slot3Running = false,
+            slot3AccumulatedHours = 0.0,
+            slot3LastStartedEpochMs = null
+        )
+
+        val status = CalculationEngine.computeHouseStatus(house, settings, tenHoursLaterMs)
+        val macA = status.macTimers.first { it.grade == PetTier.A }
+        val macB = status.macTimers.first { it.grade == PetTier.B }
+        val macC = status.macTimers.first { it.grade == PetTier.C }
+        val macD = status.macTimers.first { it.grade == PetTier.D }
+        val macE = status.macTimers.first { it.grade == PetTier.E }
+        val macF = status.macTimers.first { it.grade == PetTier.F }
+
+        // Grade A is actively training: counted down from 360h to 350h
+        assertTrue(macA.isCurrentlyTraining)
+        assertEquals(350.0, macA.hoursRemaining, 0.001)
+        assertEquals(10.0, macA.hoursUsed, 0.001)
+
+        // Grade B is actively training: counted down from 360h to 350h
+        assertTrue(macB.isCurrentlyTraining)
+        assertEquals(350.0, macB.hoursRemaining, 0.001)
+        assertEquals(10.0, macB.hoursUsed, 0.001)
+
+        // Grade C is paused (not training): did NOT count down
+        assertFalse(macC.isCurrentlyTraining)
+        assertEquals(360.0, macC.hoursRemaining, 0.001)
+
+        // Grades D, E, F are inactive: did NOT count down
+        assertFalse(macD.isCurrentlyTraining)
+        assertEquals(360.0, macD.hoursRemaining, 0.001)
+        assertFalse(macE.isCurrentlyTraining)
+        assertEquals(360.0, macE.hoursRemaining, 0.001)
+        assertFalse(macF.isCurrentlyTraining)
+        assertEquals(360.0, macF.hoursRemaining, 0.001)
+    }
+
+    @Test
+    fun macReplacementTimers_continueToCountDownWhenPetFinishesTraining_untilManuallyStopped() {
+        val settings = GlobalSettingsEntity()
+        val startMs = 1_000_000L
+        // Grade B takes 75h to complete. Let's run for 80h (pet is finished at 100%, 5h overflow).
+        val eightyHoursLaterMs = startMs + (80L * 3_600_000L)
+
+        val house = HouseEntity(
+            houseNumber = 1,
+            slot1Running = false,
+            slot2Tier = "B",
+            slot2Running = true, // Still running! Not stopped by user.
+            slot2AccumulatedHours = 0.0,
+            slot2LastStartedEpochMs = startMs,
+            slot3Running = false
+        )
+
+        val status = CalculationEngine.computeHouseStatus(house, settings, eightyHoursLaterMs)
+        val macB = status.macTimers.first { it.grade == PetTier.B }
+
+        // Pet has finished training (80h >= 75h required)
+        assertTrue(status.slot2.isFinished)
+        // Mac NPC did NOT stop when pet finished; it counted down the full 80 hours because user did not stop it!
+        assertTrue(macB.isCurrentlyTraining)
+        assertEquals(280.0, macB.hoursRemaining, 0.001) // 360h - 80h = 280h
     }
 
     @Test
