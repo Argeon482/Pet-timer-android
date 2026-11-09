@@ -1277,6 +1277,7 @@ private fun HouseDetailDialog(
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         houseStatus.macTimers.forEach { mac ->
                             FineTuningMacItem(
+                                houseNumber = houseNum,
                                 mac = mac,
                                 maxHours = macMaxHours,
                                 onSetRemainingHours = { rem -> onSetMacRemainingHours(mac.grade, rem) },
@@ -1301,6 +1302,7 @@ private fun HouseDetailDialog(
 
 /**
  * Direct numeric input block for fine-tuning a pet slot without sliders.
+ * Note: Keyed on (houseNumber, slotIndex) so background timer ticks do not overwrite typed text!
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -1316,7 +1318,7 @@ private fun FineTuningSlotBlock(
     disallowReason: String = "",
     onSelectTier: ((PetTier) -> Unit)? = null
 ) {
-    var customRemainingInput by remember(slot.remainingHours) {
+    var customRemainingInput by remember(houseNumber, slot.slotIndex) {
         mutableStateOf(String.format(Locale.US, "%.1f", slot.remainingHours))
     }
 
@@ -1361,7 +1363,10 @@ private fun FineTuningSlotBlock(
                     FilterChip(
                         selected = slot.tier == tier,
                         enabled = !isDisallowed,
-                        onClick = { onSelectTier(tier) },
+                        onClick = {
+                            onSelectTier(tier)
+                            customRemainingInput = String.format(Locale.US, "%.1f", tier.stageDurationHours)
+                        },
                         label = {
                             if (isDisallowed) {
                                 Text("${tier.code} ($disallowReason)")
@@ -1474,7 +1479,10 @@ private fun FineTuningSlotBlock(
                 Text("+10h Prog")
             }
             OutlinedButton(
-                onClick = onReset,
+                onClick = {
+                    onReset()
+                    customRemainingInput = String.format(Locale.US, "%.1f", slot.requiredHours)
+                },
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
             ) {
                 Text("Reset 0h")
@@ -1493,16 +1501,18 @@ private fun FineTuningSlotBlock(
 
 /**
  * Direct numeric input for Mac NPC remaining hours without slider.
+ * Note: Keyed on (houseNumber, mac.grade) so background timer ticks do not overwrite typed text!
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FineTuningMacItem(
+    houseNumber: Int,
     mac: MacGradeTimerStatus,
     maxHours: Double,
     onSetRemainingHours: (Double) -> Unit,
     onRenew: () -> Unit
 ) {
-    var hoursInputText by remember(mac.hoursRemaining) {
+    var hoursInputText by remember(houseNumber, mac.grade) {
         mutableStateOf(String.format(Locale.US, "%.1f", mac.hoursRemaining))
     }
 

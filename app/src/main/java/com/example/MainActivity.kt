@@ -447,7 +447,7 @@ private fun ClockAlarmCenterDialog(
             .filter { it > 0.05 }
             .minOrNull() ?: 10.0
     }
-    var customHoursText by remember(earliestRemaining) {
+    var customHoursText by remember {
         mutableStateOf(String.format(Locale.US, "%.1f", earliestRemaining))
     }
     var customLabelText by remember { mutableStateOf("Flyff Pet Empire: Check Mac NPC Timers") }
